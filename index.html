@@ -93,14 +93,20 @@
     const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx7XsS7ce2bHvIzUIxOAp3znxS3-hXWFcUGTST-FMozYuAoCKpZKqGt3LXgRgjoTI4rsQ/exec"; 
     
     async function apiCall(fnName, ...args) {
-      const response = await fetch(GAS_WEB_APP_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ functionName: fnName, arguments: args })
-      });
-      const result = await response.json();
-      if (!result.success) throw new Error(result.error);
-      return result.data;
+      try {
+        const response = await fetch(GAS_WEB_APP_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ functionName: fnName, arguments: args })
+        });
+        const result = await response.json();
+        if (!result.success) throw new Error(result.error);
+        return result.data;
+      } catch (error) {
+        console.error("API Error:", error);
+        alert("Failed to connect to the database. Check console for details.");
+        throw error;
+      }
     }
 
     const $ = function(id) { return document.getElementById(id); };
@@ -146,3 +152,371 @@
         });
         el.appendChild(frag);
       }
+    };
+
+    window.onload = function() { 
+      setLang("en"); 
+      let loader = $("loader");
+      loader.style.display = "block";
+      
+      let timeoutMsg = setTimeout(function() {
+          loader.innerHTML = "⚠️ Loading is slow. Please refresh or check connection.";
+      }, 6000);
+
+      apiCall("getAppData").then(function(d) {
+        clearTimeout(timeoutMsg);
+        loader.style.display = "none";
+        if(!d) return; 
+        
+        fillList("workerName", d.workers); 
+        fillList("clients", d.clients); 
+        fillList("serviceType", d.services); 
+        allVehicleData = d.vehicleData || [];
+        
+        let uniqueBrands = getUnique(allVehicleData.map(function(v) { return v.brand; }));
+        fillList("carType", uniqueBrands); 
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        const autoDriverName = urlParams.get('driver') || "";
+        
+        if (autoDriverName) {
+           if (d.workers && d.workers.indexOf(autoDriverName) !== -1) {
+             $("workerName").value = autoDriverName;
+             checkUser();
+           } else {
+             alert("⚠️ Link Error: Driver name '" + autoDriverName + "' not found.");
+           }
+        }
+      }).catch(function(e) {
+        clearTimeout(timeoutMsg);
+        loader.innerHTML = "❌ Connection Error. Please refresh the page.";
+      });
+      
+      let canvas = $("theCanvas");
+      if(canvas) { try { signaturePad = new SignaturePad(canvas); } catch(e){} }
+      $("startTime").value = new Date().toTimeString().substring(0,5); 
+    };
+    
+    function filterTypes() { 
+      let brandVal = $("carType").value;
+      let types = new Set();
+      for(let i = 0; i < allVehicleData.length; i++) {
+         if(allVehicleData[i].brand === brandVal) types.add(allVehicleData[i].type);
+      }
+      fillList("vType", [...types]); 
+      $("vType").value = $("vNum").value = ""; 
+      $("stepType").style.display = "block"; 
+      $("stepNum").style.display = $("stepFinal").style.display = "none"; 
+    }
+    
+    function filterNumbers() { 
+      let brandVal = $("carType").value, typeVal = $("vType").value;
+      let nums = new Set();
+      for(let i = 0; i < allVehicleData.length; i++) {
+         if(allVehicleData[i].brand === brandVal && allVehicleData[i].type === typeVal) nums.add(allVehicleData[i].num);
+      }
+      fillList("vNum", [...nums]); 
+      $("vNum").value = ""; 
+      $("stepNum").style.display = "block"; 
+      $("stepFinal").style.display = "none"; 
+    }
+    
+    function showFinalStep() { 
+      if($("vNum").value) { $("stepFinal").style.display = "block"; resizeCanvas(); } 
+    }
+
+    function getLocation(id) { 
+      $(id).value = t[currentLang].locating; 
+      if(navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(function(pos) {
+          apiCall("getAddressFromLatLong", pos.coords.latitude, pos.coords.longitude).then(function(a) { $(id).value = a; });
+        }, function() { $(id).value = t[currentLang].gpsFail; }, { enableHighAccuracy: true }); 
+      } else {
+        $(id).value = t[currentLang].gpsNotSupp; 
+      }
+    }
+
+    function startLiveTracking() { 
+      if(trackingInterval) clearInterval(trackingInterval); 
+      let n = $("workerName").value; 
+      trackingInterval = setInterval(function() {
+        navigator.geolocation.getCurrentPosition(function(p) {
+          apiCall("updateLiveLocation", n, p.coords.latitude, p.coords.longitude);
+        }, function(){}, {enableHighAccuracy: true});
+      }, 15000); 
+    }
+
+    function trackFlight() { 
+      let f = currentShiftDetails.flightNum; 
+      if(f) window.open("https://flightaware.com/live/flight/" + f.replace(/\s+/g, "").toUpperCase(), "_blank"); 
+    }
+
+    async function checkUser() {
+      let name = $("workerName").value; if(!name || isCheckingUser) return; isCheckingUser = true; 
+      currentShiftDetails = {}; assignedMissionData = null;
+      ["preShiftDashboard","loader","startSection","endSection","pdfContainer","flightTrackerContainer"].forEach(function(i) {
+        $(i).style.display = i==="loader"||i==="preShiftDashboard" ? "block" : "none";
+      });
+      if($("assignedAlert")) $("assignedAlert").style.display = "none";
+
+      try {
+        let res = await apiCall("checkStatus", name); isCheckingUser = false; $("loader").style.display = "none";
+        if(res.status === "Open") {
+          $("preShiftDashboard").style.display = "none"; $("endSection").style.display = "block"; getLocation("endLoc");
+          currentShiftDetails = { client:res.client, brand:res.brand, vType:res.vType, vNum:res.vNum, flightNum:res.flightNum, pdf:res.pdf, sig: res.sig }; startLiveTracking();
+          if(res.flightNum && res.flightNum.trim()) { $("flightNumDisplay").innerText = res.flightNum; $("flightTrackerContainer").style.display = "block"; }
+          if(res.pdf && res.pdf !== "Error") { $("activePdfLink").href = res.pdf; $("pdfContainer").style.display = "block"; }
+        } else if(res.status === "BetweenShifts") {
+          if(confirm(currentLang === "en" ? "Continue mission for " + res.client + "?" : "Continuer pour " + res.client + "?")) {
+            $("preShiftDashboard").style.display = "none"; $("startSection").style.display = "block";
+            $("clientName").value = res.client; 
+            fillList("carType", [res.brand]); $("carType").value = res.brand;
+            fillList("vType", [res.vType]); $("vType").value = res.vType;
+            fillList("vNum", [res.vNum]); $("vNum").value = res.vNum;
+            $("signatureArea").style.display = "none"; currentShiftDetails = { pdf:res.pdf, client:res.client, sig: res.sig }; 
+            ["stepType", "stepNum", "stepFinal"].forEach(function(i) { $(i).style.display = "block"; }); getLocation("startLoc"); resizeCanvas();
+          } else { $("preShiftDashboard").style.display = $("signatureArea").style.display = "block"; }
+        } else if(res.assigned) {
+          assignedMissionData = res.assigned; 
+          $("assignedDetails").innerHTML = "<b>Client:</b> " + res.assigned.client + "<br><b>Vehicle:</b> " + res.assigned.brand + " " + res.assigned.vType + " (" + res.assigned.vNum + ")<br><b>Time:</b> " + res.assigned.time;
+          $("assignedAlert").style.display = $("signatureArea").style.display = "block";
+        } else $("preShiftDashboard").style.display = $("signatureArea").style.display = "block";
+      } catch(err) { isCheckingUser = false; $("loader").style.display = "none"; alert(t[currentLang].errServer + err); }
+    }
+
+    function toggleSignboard() { 
+      let o = $("signboardOverlay"); 
+      if(o.style.display === "flex") { o.style.display = "none"; }
+      else { 
+        $("signClientName").innerText = currentShiftDetails.client || (assignedMissionData ? assignedMissionData.client : null) || "VIP GUEST"; 
+        o.style.display = "flex"; 
+      } 
+    }
+
+    function acceptAssignedShift() {
+      $("preShiftDashboard").style.display = "none"; $("startSection").style.display = "block";
+      $("clientName").value = assignedMissionData.client; 
+      fillList("carType", [assignedMissionData.brand]); $("carType").value = assignedMissionData.brand;
+      fillList("vType", [assignedMissionData.vType]); $("vType").value = assignedMissionData.vType;
+      fillList("vNum", [assignedMissionData.vNum]); $("vNum").value = assignedMissionData.vNum;
+      $("serviceType").value = assignedMissionData.service || "TRF"; $("startLoc").value = "AAA Garage"; $("startTime").value = assignedMissionData.time || new Date().toTimeString().substring(0,5);
+      ["stepType", "stepNum", "stepFinal"].forEach(function(i) { $(i).style.display = "block"; }); resizeCanvas();
+    }
+
+    function startManualShift() { $("preShiftDashboard").style.display = "none"; $("startSection").style.display = "block"; getLocation("startLoc"); }
+
+    function sendWA(type) { 
+      let p = $("waPhoneInput").value.replace(/\s+/g, ""); 
+      if(p.length < 5) return alert("Please enter phone number."); 
+      
+      let btn = $("btnWaArrived"), og = btn.innerText;
+      let l = $("waLangSelect").value, d = $("workerName").value;
+      let c = currentShiftDetails.brand || "Luxury Vehicle";
+      let hr = new Date().getHours();
+      
+      let g = "";
+      if (l === "en") g = hr < 12 ? "Good morning" : hr < 18 ? "Good afternoon" : "Good evening";
+      else if (l === "fr") g = hr < 18 ? "Bonjour" : "Bonsoir";
+      else g = hr < 12 ? "صباح الخير" : hr < 18 ? "يسعد مساك" : "مساء الخير";
+      
+      let tr = webAppUrl + "?track=" + encodeURIComponent(d);
+      let msg = "";
+      
+      if (l === "en") {
+        msg = type === "enroute" ? g + ", this is " + d + ", your AAA Luxury chauffeur. I am en route in the " + c + ".\n\nTrack my live arrival:\n📍 " + tr : g + ", this is " + d + ". I have arrived in the " + c + ". Location: ";
+      } else {
+        msg = type === "enroute" ? g + ", c'est " + d + ", votre chauffeur AAA Luxury. Je suis en route à bord du " + c + ".\n\nSuivez mon arrivée :\n📍 " + tr : g + ", c'est " + d + ". Je suis arrivé dans le " + c + ". Ma position : ";
+      }
+      
+      const trig = function(m) { 
+        let a = document.createElement("a"); 
+        a.href = "https://wa.me/" + p + "?text=" + encodeURIComponent(m); 
+        a.target = "_top"; 
+        document.body.appendChild(a); 
+        a.click(); 
+        document.body.removeChild(a); 
+        btn.innerText = og; 
+      };
+      
+      if(type === "arrived") { 
+        btn.innerText = t[currentLang].locating; 
+        navigator.geolocation.getCurrentPosition(function(pos) {
+          trig(msg + "http://googleusercontent.com/maps.google.com/?q=" + pos.coords.latitude + "," + pos.coords.longitude);
+        }, function() { alert("GPS required."); btn.innerText = og; }, {enableHighAccuracy: true}); 
+      } else { 
+        trig(msg); 
+      } 
+    }
+    
+    const getBase64 = function(file) {
+      return new Promise(function(res) { 
+        let r = new FileReader(); r.readAsDataURL(file); 
+        r.onload = function(e) { 
+          if(!file.type.startsWith("image/")) return res({data:r.result, mimeType:file.type, name:file.name}); 
+          let img = new Image(); img.src = e.target.result; 
+          img.onload = function() { 
+            let c = document.createElement("canvas"), w = img.width, h = img.height; 
+            if(w>1200){h*=1200/w; w=1200;} 
+            c.width=w; c.height=h; c.getContext("2d").drawImage(img,0,0,w,h); 
+            res({data:c.toDataURL("image/jpeg",0.6), mimeType:"image/jpeg", name:file.name}); 
+          }; 
+        }; 
+      });
+    };
+
+    function drawFuelGauge(page, cx, cy, percentage) {
+      let r = 6.5; 
+      let p = Math.min(Math.max(percentage, 0), 100);
+      const pointsToSvgPath = function(pts) { return pts.map(function(pt, i) { return (i === 0 ? "M " + pt.x + "," + pt.y : "L " + pt.x + "," + pt.y); }).join(" ") + " Z"; };
+      let bgPts = [{x: 0, y: 0}];
+      for (let i = 180; i >= 0; i -= 5) { let rad = i * Math.PI / 180; bgPts.push({ x: r * Math.cos(rad), y: -r * Math.sin(rad) }); }
+      page.drawSvgPath(pointsToSvgPath(bgPts), { x: cx, y: cy, color: PDFLib.rgb(0.9, 0.9, 0.9), borderColor: PDFLib.rgb(0, 0, 0), borderWidth: 1 });
+      if (p > 0) {
+        let fillPts = [{x: 0, y: 0}]; let startAngle = 180; let endAngle = 180 - (p / 100) * 180; 
+        for (let j = startAngle; j >= endAngle; j -= 5) { let rad2 = j * Math.PI / 180; fillPts.push({ x: r * Math.cos(rad2), y: -r * Math.sin(rad2) }); }
+        let endRad = endAngle * Math.PI / 180; fillPts.push({ x: r * Math.cos(endRad), y: -r * Math.sin(endRad) });
+        page.drawSvgPath(pointsToSvgPath(fillPts), { x: cx, y: cy, color: PDFLib.rgb(0.2, 0.2, 0.2) });
+      }
+    }
+
+    async function doStart() {
+      setBtn("btnStart", t[currentLang].stamping, true);
+      let data = { 
+        name:$("workerName").value, client:$("clientName").value, car:$("carType").value, vType:$("vType").value, vNum:$("vNum").value, service:$("serviceType").value, 
+        location:$("startLoc").value, timeStr:$("startTime").value, assignedRowIdx: (assignedMissionData ? assignedMissionData.rowIdx : null), flightNum: (assignedMissionData ? assignedMissionData.flightNum : ""), 
+        pdfUrl:currentShiftDetails.pdf||"", startKms: $("startKms").value, startFuel: $("startFuel").value
+      };
+      
+      if(!data.name||!data.client||!data.car||!data.startKms||!data.startFuel) { setBtn("btnStart", t[currentLang].btnStart, false); return alert(t[currentLang].fillAll); }
+      
+      let isNew = !data.pdfUrl; 
+      if(isNew && signaturePad && signaturePad.isEmpty()) { setBtn("btnStart", t[currentLang].btnStart, false); return alert(t[currentLang].mustSign); } 
+      
+      if(isNew && signaturePad) data.signature = signaturePad.toDataURL();
+      else data.signature = currentShiftDetails.sig || "";
+
+      try {
+        let tmpl = isNew ? await apiCall("getPdfTemplate") : await apiCall("getFileB64ByUrl", data.pdfUrl);
+        let shiftCount = isNew ? 0 : (parseInt(await apiCall("getMissionShiftCount", data.name, data.client)) || 0);
+        let doc = await PDFLib.PDFDocument.load(tmpl);
+        
+        let pageIndex = Math.floor(shiftCount / 12);
+        let shiftOnPage = shiftCount % 12;
+        let yOff = 680 - (shiftOnPage * 26); 
+        
+        if (!isNew && shiftOnPage === 0 && shiftCount > 0) {
+            let cleanTmpl = await apiCall("getPdfTemplate");
+            let cleanDoc = await PDFLib.PDFDocument.load(cleanTmpl);
+            let [newPage] = await doc.copyPages(cleanDoc, [0]);
+            doc.insertPage(pageIndex, newPage); 
+            let newP = doc.getPages()[pageIndex];
+            newP.drawText(data.name, {x:90,y:755,size:10}); newP.drawText(data.car + " " + data.vType, {x:90,y:742,size:9}); newP.drawText(data.vNum, {x:90,y:730,size:10}); 
+        }
+        
+        let p = doc.getPages()[pageIndex];
+        
+        if(isNew) { 
+          p.drawText(data.name, {x:90,y:755,size:10}); p.drawText(data.car + " " + data.vType, {x:90,y:742,size:9}); p.drawText(data.vNum, {x:90,y:730,size:10}); 
+          if(data.signature) {
+            let sigImg = await doc.embedPng(data.signature);
+            p.drawImage(sigImg, {x:340,y:110,width:120,height:50}); p.drawText(new Date().toLocaleDateString(), {x:40, y:150, size:5}); p.drawImage(sigImg, {x:10, y:120, width: sigImg.width * 0.1, height: sigImg.height * 0.1});
+          }
+          let startFuelNum = parseFloat(data.startFuel) || 0; drawFuelGauge(p, 127, 125, startFuelNum); p.drawText("Start Fuel: " + startFuelNum + "%", { x: 90, y: 100, size: 6 });
+          try {
+             let extraPdfs = await apiCall("getExtraPdfsB64", data.name);
+             let b64s = [extraPdfs.s1, extraPdfs.s2, extraPdfs.driverPdf];
+             for(let b64 of b64s) {
+               if(b64) {
+                 let exDoc = await PDFLib.PDFDocument.load(b64);
+                 let copied = await doc.copyPages(exDoc, exDoc.getPageIndices());
+                 copied.forEach(cp => doc.addPage(cp));
+               }
+             }
+          } catch(extraErr) { console.warn("Failed to attach extra PDFs", extraErr); }
+        }
+        
+        let loc = data.location||"", l1 = loc, l2 = ""; if(loc.indexOf(",") !== -1) { let pt = loc.split(","); l1 = pt[0]+","; l2 = pt.slice(1).join(",").trim(); } else if(loc.length>20) { let w = loc.split(" "), m = Math.ceil(w.length/2); l1 = w.slice(0,m).join(" "); l2 = w.slice(m).join(" "); }
+        p.drawText(new Date().toLocaleDateString(), {x:30,y:yOff,size:9}); p.drawText(l1, {x:90,y:yOff +5,size:4}); if(l2) p.drawText(l2, {x:90,y:yOff,size:4}); p.drawText(data.vNum, {x:153,y:yOff,size:9}); p.drawText(data.service, {x:220,y:yOff,size:9}); p.drawText(data.timeStr, {x:280,y:yOff,size:9}); p.drawText(String(data.startKms), {x:345,y:yOff,size:9});
+        
+        data.pdfBase64 = await doc.saveAsBase64(); 
+        await apiCall("handleClockIn", data, currentLang); setBtn("btnStart", t[currentLang].btnStart, false); checkUser();
+      } catch(e) { alert("Error: " + e); setBtn("btnStart", t[currentLang].btnStart, false); }
+    }
+
+    async function finishJob(isFinal) { 
+      let btnId = isFinal ? "btnEnd" : "btnEndShift"; let btnOrig = $(btnId).innerText; 
+      let endKmsVal = $("endKms").value;
+      if (!endKmsVal) { return alert(currentLang === "en" ? "Please enter End KMS before completing." : "Veuillez entrer le kilométrage de fin."); }
+
+      let endFuelVal = "";
+      if (isFinal) {
+        if (!confirm(currentLang==="en" ? "Is this the FINAL day of the contract? (Closes mission)" : "Est-ce le DERNIER jour du contrat ? (Clôture la mission)")) return;
+        while (true) {
+          endFuelVal = prompt(currentLang==="en" ? "Mission Ending: Enter final Fuel Level (0-100%):" : "Fin de mission: Entrez le niveau de carburant (0-100%) :");
+          if (endFuelVal === null) return; 
+          if (endFuelVal.trim() === "") { alert(currentLang==="en" ? "Fuel level is required to end the mission." : "Le niveau de carburant est requis."); return; }
+          let fuelNum = parseFloat(endFuelVal);
+          if (!isNaN(fuelNum) && fuelNum >= 0 && fuelNum <= 100) { endFuelVal = fuelNum.toString(); break; } 
+          else { alert(currentLang==="en" ? "Error: Please enter a valid number between 0 and 100." : "Erreur: Veuillez entrer un nombre valide entre 0 et 100."); }
+        }
+      }
+
+      setBtn(btnId, t[currentLang].saving, true); 
+      if(trackingInterval) clearInterval(trackingInterval);
+      
+      let pdfB64 = null, endTimeStr = new Date().toTimeString().substring(0,5), name = $("workerName").value;
+      let endLocationVal = $("endLoc").value || ""; 
+      
+      try {
+        if(currentShiftDetails.pdf && currentShiftDetails.pdf !== "Error") {
+          let doc = await PDFLib.PDFDocument.load(await apiCall("getFileB64ByUrl", currentShiftDetails.pdf)), fnt = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
+          let r = parseInt(await apiCall("getMissionShiftCount", name, currentShiftDetails.client)) || 1; let shiftIndex = Math.max(0, r - 1);
+          let pageIndex = Math.floor(shiftIndex / 12); let shiftOnPage = shiftIndex % 12; let yOff = 680 - (shiftOnPage * 26); 
+          let p = doc.getPages()[pageIndex];
+          
+          p.drawText(endTimeStr, {x:315, y:yOff, size:9, font:fnt}); p.drawText(String(endKmsVal), {x:390, y:yOff, size:9, font:fnt});
+          
+          let loc = endLocationVal, l1 = loc, l2 = ""; 
+          if(loc.indexOf(",") !== -1) { let pt = loc.split(","); l1 = pt[0] + ","; l2 = pt.slice(1).join(",").trim(); } 
+          else if(loc.length > 20) { let w = loc.split(" "), m = Math.ceil(w.length/2); l1 = w.slice(0, m).join(" "); l2 = w.slice(m).join(" "); }
+          
+          p.drawText(l1, {x:440, y:yOff + 6, size:5, font:fnt}); if(l2) p.drawText(l2, {x:440, y:yOff - 6, size:5, font:fnt});
+
+          if (isFinal && currentShiftDetails.sig) {
+            try {
+              let sigImg = await doc.embedPng(currentShiftDetails.sig);
+              p.drawText(new Date().toLocaleDateString(), {x: 170, y: 150, size: 5, font: fnt}); p.drawImage(sigImg, {x: 145, y: 120, width: sigImg.width * 0.1, height: sigImg.height * 0.1});
+            } catch (err) { console.warn("Could not draw final signature: ", err); }
+          }
+          if (isFinal && endFuelVal !== "") {
+             let endFuelNum = parseFloat(endFuelVal) || 0; drawFuelGauge(p, 254, 125, endFuelNum); p.drawText("End Fuel: " + endFuelNum + "%", { x: 190, y: 90, size: 6, font: fnt });
+          }
+          pdfB64 = await doc.saveAsBase64();
+        }
+      } catch(e) { console.warn("PDF Stamping Error: " + e); }
+      
+      try {
+        let keyEl = $("keyLoc");
+        let payload = { name: name, loc:endLocationVal, keyLoc: (keyEl ? keyEl.value : ""), pdfBase64:pdfB64, pdfUrl:currentShiftDetails.pdf, endTimeStr: endTimeStr, endKms: endKmsVal, endFuel: endFuelVal };
+        let res = await apiCall("handleClockOut", payload, currentLang);
+        alert(res.msg); location.reload();
+      } catch(err) { alert(err); setBtn(btnId, btnOrig, false); }
+    }
+    
+    function resizeCanvas() { let r = Math.max(window.devicePixelRatio||1,1); let c = $("theCanvas"); if(c){ c.width = c.offsetWidth*r; c.height = c.offsetHeight*r; c.getContext("2d").scale(r,r); } }
+    
+    async function submitReport() { 
+      let desc = $("reportDesc").value, files = $("reportFiles").files; if(!desc && !files.length) return alert(t[currentLang].provideDesc); 
+      setBtn("btnRep", t[currentLang].submitting, true); 
+      let arr = await Promise.all(Array.from(files).map(getBase64));
+      apiCall("saveVehicleReport", { driverName:$("workerName").value, brand:currentShiftDetails.brand, vType:currentShiftDetails.vType, vNum:currentShiftDetails.vNum, description:desc, files:arr }, currentLang).then(function(r) { alert(r.msg); setBtn("btnRep", t[currentLang].btnSubmitRep, false); toggleBox("reportBox"); $("reportDesc").value=$("reportFiles").value=""; }).catch(function(e) { alert(e); setBtn("btnRep", t[currentLang].btnSubmitRep, false); }); 
+    }
+
+    async function submitExpense() {
+      let files = $("expenseFile").files; if(!files.length) return alert(t[currentLang].selectFiles); setBtn("btnExp", t[currentLang].uploading, true);
+      let arr = await Promise.all(Array.from(files).map(getBase64));
+      apiCall("saveExtraExpense", $("workerName").value, arr).then(function(r) { alert(r.msg); setBtn("btnExp", t[currentLang].btnAddExp, false); toggleBox("expenseBox"); $("expenseFile").value=""; });
+    }
+  </script>
+</body>
+</html>

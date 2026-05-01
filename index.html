@@ -100,11 +100,11 @@
             body: JSON.stringify({ functionName: fnName, arguments: args })
         });
         const result = await response.json();
-        if (!result.success) throw new Error(result.error);
+        if (!result.success) throw new Error(result.error || "Unknown API Error");
         return result.data;
       } catch (error) {
         console.error("API Error:", error);
-        alert("Failed to connect to the database. Check console for details.");
+        alert("Server Connection Failed: " + error.message);
         throw error;
       }
     }
@@ -167,6 +167,7 @@
         clearTimeout(timeoutMsg);
         loader.style.display = "none";
         if(!d) return; 
+        if(d.error) { alert("Spreadsheet Error: " + d.error); return; }
         
         fillList("workerName", d.workers); 
         fillList("clients", d.clients); 

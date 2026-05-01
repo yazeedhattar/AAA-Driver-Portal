@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>AAA Live Vehicle Tracking</title>
+  
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  
+  <style>
+    body { font-family: 'Times New Roman', serif; margin: 0; padding: 0; background: #000; color: white; display: flex; flex-direction: column; height: 100vh; }
+    .header { padding: 15px; text-align: center; background: #111; border-bottom: 2px solid #c5a059; z-index: 1000;}
+    .logo { height: 40px; }
+    #map { flex-grow: 1; width: 100%; background: #000;}
+    .info-panel { background: #111; padding: 25px 20px; border-top: 2px solid #c5a059; display: flex; align-items: center; justify-content: space-between;}
+    .driver-details { display: flex; flex-direction: column; }
+    .driver-name { font-size: 20px; font-weight: bold; color: #c5a059; text-transform: uppercase; margin-bottom: 5px; font-family: sans-serif;}
+    .car-info { font-size: 14px; color: #aaa; text-transform: uppercase; letter-spacing: 1px;}
+    .eta-box { background: #c5a059; color: black; padding: 10px 15px; border-radius: 5px; font-weight: bold; font-family: sans-serif; text-align: center; font-size: 14px;}
+    .car-marker { font-size: 30px; text-align: center; line-height: 30px; filter: drop-shadow(0 0 10px rgba(197, 160, 89, 0.8)); }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <img src="https://i.postimg.cc/cJhXywng/aaa-luxury-sport-cars-rental-logo.jpg" class="logo">
+  </div>
+
+  <div id="map"></div>
+
+  <div class="info-panel">
+    <div class="driver-details">
+      <div class="driver-name" id="drvName">Loading...</div>
+      <div class="car-info" id="carType">Locating Vehicle</div>
+    </div>
+    <div class="eta-box">LIVE GPS<br><span style="font-size:10px; font-weight:normal;">TRACKING</span></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // --- GITHUB PAGES API CONNECTION ---
+    const GAS_WEB_APP_URL = "YOUR_SCRIPT_URL_HERE"; // PASTE WEB APP URL HERE
+    
+    async function apiCall(fnName, ...args) {
+      if (GAS_WEB_APP_URL === "YOUR_SCRIPT_URL_HERE") throw new Error("Missing API URL");
+      const response = await fetch(GAS_WEB_APP_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ functionName: fnName, arguments: args }) });
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    var targetDriver = urlParams.get('driver') || "Unknown Driver"; 
+    
+    var map = L.map('map', {zoomControl: false}).setView([48.8566, 2.3522], 14);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
+
+    var carIcon = L.divIcon({ className: 'custom-div-icon', html: "<div class='car-marker'>🚘</div>", iconSize: [30, 30], iconAnchor: [15, 15] });
+    var vehicleMarker = L.marker([48.8566, 2.3522], {icon: carIcon}).addTo(map);
+    var isFirstLoad = true;
+
+    function fetchLocation() {
+      apiCall("getLiveLocation", targetDriver).then(data => {
+        if(data && data.lat && data.lng) {
+          document.getElementById('drvName').innerText = data.driver || targetDriver;
+          document.getElementById('carType').innerText = data.car || "Luxury Vehicle";
+          var newLatLng = [data.lat, data.lng];
+          vehicleMarker.setLatLng(newLatLng);
+          if(isFirstLoad) { map.setView(newLatLng, 15); isFirstLoad = false; } else map.panTo(newLatLng);
+        } else {
+          document.getElementById('carType').innerText = "Vehicle Offline / Arrived";
+        }
+      }).catch(err => console.error("Tracking Error:", err));
+    }
+
+    setInterval(fetchLocation, 10000);
+    fetchLocation();
+  </script>
+</body>
+</html>

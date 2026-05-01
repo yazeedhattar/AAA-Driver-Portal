@@ -90,13 +90,18 @@
   <script src="https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js"></script>
   <script>
     // --- GITHUB PAGES API CONNECTION ---
-    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx7XsS7ce2bHvIzUIxOAp3znxS3-hXWFcUGTST-FMozYuAoCKpZKqGt3LXgRgjoTI4rsQ/exec"; // PASTE WEB APP URL HERE
+const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx7XsS7ce2bHvIzUIxOAp3znxS3-hXWFcUGTST-FMozYuAoCKpZKqGt3LXgRgjoTI4rsQ/exec"; 
     
     async function apiCall(fnName, ...args) {
-      if (GAS_WEB_APP_URL === "https://script.google.com/macros/s/AKfycbx7XsS7ce2bHvIzUIxOAp3znxS3-hXWFcUGTST-FMozYuAoCKpZKqGt3LXgRgjoTI4rsQ/exec") {
-          alert("Developer Error: Please paste your GAS Web App URL in the script.");
-          throw new Error("Missing API URL");
-      }
+      const response = await fetch(GAS_WEB_APP_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ functionName: fnName, arguments: args })
+      });
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    }
       const response = await fetch(GAS_WEB_APP_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },

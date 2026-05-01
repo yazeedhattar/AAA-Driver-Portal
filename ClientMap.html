@@ -39,14 +39,22 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     // --- GITHUB PAGES API CONNECTION ---
-    const GAS_WEB_APP_URL = "YOUR_SCRIPT_URL_HERE"; // PASTE WEB APP URL HERE
+    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx7XsS7ce2bHvIzUIxOAp3znxS3-hXWFcUGTST-FMozYuAoCKpZKqGt3LXgRgjoTI4rsQ/exec"; 
     
     async function apiCall(fnName, ...args) {
-      if (GAS_WEB_APP_URL === "YOUR_SCRIPT_URL_HERE") throw new Error("Missing API URL");
-      const response = await fetch(GAS_WEB_APP_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ functionName: fnName, arguments: args }) });
-      const result = await response.json();
-      if (!result.success) throw new Error(result.error);
-      return result.data;
+      try {
+        const response = await fetch(GAS_WEB_APP_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ functionName: fnName, arguments: args })
+        });
+        const result = await response.json();
+        if (!result.success) throw new Error(result.error || "Unknown API Error");
+        return result.data;
+      } catch (error) {
+        console.error("API Error:", error);
+        throw error;
+      }
     }
 
     const urlParams = new URLSearchParams(window.location.search);
@@ -70,9 +78,13 @@
         } else {
           document.getElementById('carType').innerText = "Vehicle Offline / Arrived";
         }
-      }).catch(err => console.error("Tracking Error:", err));
+      }).catch(err => {
+        console.error("Tracking Error:", err);
+        document.getElementById('carType').innerText = "Connection lost...";
+      });
     }
 
+    // Ping the Google Sheet every 10 seconds to move the car
     setInterval(fetchLocation, 10000);
     fetchLocation();
   </script>

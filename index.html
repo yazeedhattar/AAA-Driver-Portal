@@ -397,18 +397,25 @@
       else data.signature = currentShiftDetails.sig || "";
 
       try {
-        // --- PROMISE.ALL SPEED OPTIMIZATION ---
-        let [tmpl, shiftCount, extraPdfs] = await Promise.all([
-            isNew ? apiCall("getPdfTemplate") : apiCall("getFileB64ByUrl", data.pdfUrl),
-            isNew ? Promise.resolve(0) : apiCall("getMissionShiftCount", data.name, data.client).then(res => parseInt(res) || 0),
-            isNew ? apiCall("getExtraPdfsB64", data.name) : Promise.resolve(null)
-        ]);
+        // --- SINGLE API CALL FOR MAXIMUM SPEED ---
+        let prepData = await apiCall("preparePdfData", {
+            isNew: isNew,
+            pdfUrl: data.pdfUrl,
+            driverName: data.name,
+            clientName: data.client
+        });
+        
+        if (prepData.error) throw new Error(prepData.error);
+
+        let tmpl = prepData.tmpl;
+        let shiftCount = parseInt(prepData.shiftCount) || 0;
+        let extraPdfs = prepData.extraPdfs;
 
         let doc = await PDFLib.PDFDocument.load(tmpl);
         
         let pageIndex = Math.floor(shiftCount / 12);
         let shiftOnPage = shiftCount % 12;
-        let yOff = 680 - (shiftOnPage * 26); 
+        let yOff = 680 - (shiftOnPage * 26);
         
         if (!isNew && shiftOnPage === 0 && shiftCount > 0) {
             let cleanTmpl = await apiCall("getPdfTemplate");

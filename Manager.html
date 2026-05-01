@@ -142,20 +142,29 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     // --- GITHUB PAGES API CONNECTION ---
-    const GAS_WEB_APP_URL = "YOUR_SCRIPT_URL_HERE"; // PASTE WEB APP URL HERE
+    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx7XsS7ce2bHvIzUIxOAp3znxS3-hXWFcUGTST-FMozYuAoCKpZKqGt3LXgRgjoTI4rsQ/exec";
     
     async function apiCall(fnName, ...args) {
-      if (GAS_WEB_APP_URL === "YOUR_SCRIPT_URL_HERE") { alert("Missing API URL!"); throw new Error("Missing API URL"); }
-      const response = await fetch(GAS_WEB_APP_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ functionName: fnName, arguments: args }) });
-      const result = await response.json();
-      if (!result.success) throw new Error(result.error);
-      return result.data;
+      try {
+        const response = await fetch(GAS_WEB_APP_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ functionName: fnName, arguments: args })
+        });
+        const result = await response.json();
+        if (!result.success) throw new Error(result.error || "Unknown API Error");
+        return result.data;
+      } catch (error) {
+        console.error("API Error:", error);
+        alert("Server Connection Failed: " + error.message);
+        throw error;
+      }
     }
 
     const $ = function(id) { return document.getElementById(id); };
     let appDataGlobal = null;
     let alertedShifts = {}; 
-    let webAppUrl = window.location.href.split('?')[0];
+    let webAppUrl = window.location.href.split('?')[0].replace("Manager.html", "");
 
     window.onload = function() {
       apiCall("getAppData").then(data => {

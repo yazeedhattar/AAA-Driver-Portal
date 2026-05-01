@@ -397,14 +397,38 @@
       else data.signature = currentShiftDetails.sig || "";
 
       try {
-      // Fetch everything from Google at the exact same time
-let [tmpl, shiftCount, extraPdfs] = await Promise.all([
-    isNew ? apiCall("getPdfTemplate") : apiCall("getFileB64ByUrl", data.pdfUrl),
-    isNew ? Promise.resolve(0) : apiCall("getMissionShiftCount", data.name, data.client).then(res => parseInt(res) || 0),
-    isNew ? apiCall("getExtraPdfsB64", data.name) : Promise.resolve(null)
-]);
+        // --- PROMISE.ALL SPEED OPTIMIZATION ---
+        let [tmpl, shiftCount, extraPdfs] = await Promise.all([
+            isNew ? apiCall("getPdfTemplate") : apiCall("getFileB64ByUrl", data.pdfUrl),
+            isNew ? Promise.resolve(0) : apiCall("getMissionShiftCount", data.name, data.client).then(res => parseInt(res) || 0),
+            isNew ? apiCall("getExtraPdfsB64", data.name) : Promise.resolve(null)
+        ]);
 
-let doc = await PDFLib.PDFDocument.load(tmpl);
+        let doc = await PDFLib.PDFDocument.load(tmpl);
+        
+        let pageIndex = Math.floor(shiftCount / 12);
+        let shiftOnPage = shiftCount % 12;
+        let yOff = 680 - (shiftOnPage * 26); 
+        
+        if (!isNew && shiftOnPage === 0 && shiftCount > 0) {
+            let cleanTmpl = await apiCall("getPdfTemplate");
+            let cleanDoc = await PDFLib.PDFDocument.load(cleanTmpl);
+            let [newPage] = await doc.copyPages(cleanDoc, [0]);
+            doc.insertPage(pageIndex, newPage); 
+            let newP = doc.getPages()[pageIndex];
+            newP.drawText(data.name, {x:90,y:755,size:10}); newP.drawText(data.car + " " + data.vType, {x:90,y:742,size:9}); newP.drawText(data.vNum, {x:90,y:730,size:10}); 
+        }
+        
+        let p = doc.getPages()[pageIndex];
+        
+        if(isNew) { 
+          p.drawText(data.name, {x:90,y:755,size:10}); p.drawText(data.car + " " + data.vType, {x:90,y:742,size:9}); p.drawText(data.vNum, {x:90,y:730,size:10}); 
+          if(data.signature) {
+            let sigImg = await doc.embedPng(data.signature);
+            p.drawImage(sigImg, {x:340,y:110,width:120,height:50}); p.drawText(new Date().toLocaleDateString(), {x:40, y:150, size:5}); p.drawImage(sigImg, {x:10, y:120, width: sigImg.width * 0.1, height: sigImg.height * 0.1});
+          }
+          let startFuelNum = parseFloat(data.startFuel) || 0; drawFuelGauge(p, 127, 125, startFuelNum); p.drawText("Start Fuel: " + startFuelNum + "%", { x: 90, y: 100, size: 6 });
+          try {
              let b64s = [extraPdfs.s1, extraPdfs.s2, extraPdfs.driverPdf];
              for(let b64 of b64s) {
                if(b64) {

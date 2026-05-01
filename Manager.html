@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>AAA Command Center</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root { --gold: #c5a059; --dark: #0a0a0a; --panel: #141414; --border: #333; }
+    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background: var(--dark); color: white; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    .header { display: flex; justify-content: space-between; align-items: center; padding: 15px 30px; background: #000; border-bottom: 1px solid var(--border); }
+    .header img { height: 40px; }
+    .header-title { font-size: 20px; font-weight: bold; color: var(--gold); letter-spacing: 2px; text-transform: uppercase; display: flex; align-items: center; gap: 15px;}
+    .btn-action { background: var(--gold); color: black; border: none; padding: 8px 16px; border-radius: 4px; font-weight: bold; cursor: pointer; text-transform: uppercase; font-size: 11px; transition: 0.2s;}
+    .btn-action:hover { background: white; }
+    .btn-green { background: #4caf50; color: white;} .btn-green:hover{background: #388e3c;}
+    .btn-pending { background: #ff9800; color: white; display: none; } .btn-pending:hover{background: #e68a00;}
+    .kpi-bar { display: flex; gap: 20px; padding: 20px 30px; background: var(--panel); border-bottom: 1px solid var(--border); }
+    .kpi-card { flex: 1; background: #000; border: 1px solid var(--gold); border-radius: 8px; padding: 15px; text-align: center; }
+    .kpi-title { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
+    .kpi-value { font-size: 28px; font-weight: bold; color: white; }
+    .kpi-value.gold { color: var(--gold); }
+    .kpi-value.red { color: #f44336; }
+    .main-content { display: flex; flex: 1; overflow: hidden; }
+    .map-container { flex: 2; position: relative; border-right: 1px solid var(--border); display: flex; flex-direction: column;}
+    #map { flex: 1; width: 100%; height: 100%; background: #000; z-index: 1;}
+    .side-panels { flex: 1; display: flex; flex-direction: column; max-width: 450px; background: var(--panel); border-left: 1px solid var(--border); }
+    .upcoming-container { flex: 1; display: flex; flex-direction: column; border-bottom: 2px solid #000; overflow: hidden; }
+    .feed-container { flex: 1.5; display: flex; flex-direction: column; overflow: hidden; }
+    .feed-header { padding: 15px 20px; background: #000; border-bottom: 1px solid var(--border); font-weight: bold; color: var(--gold); text-transform: uppercase; letter-spacing: 1px; display: flex; justify-content: space-between;}
+    .feed-list { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 15px; }
+    .feed-card { background: #000; border: 1px solid var(--border); border-left: 4px solid #555; border-radius: 5px; padding: 15px; transition: 0.3s; will-change: border-color; }
+    .feed-card.active { border-left-color: #4caf50; } 
+    .feed-card.closed { border-left-color: var(--gold); } 
+    .feed-card.upcoming { border-left-color: #ffeb3b; } 
+    .feed-card.late { border-left-color: #f44336; background: #1a0505;} 
+    .fc-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .fc-driver { font-weight: bold; font-size: 16px; color: white; }
+    .fc-time { font-size: 12px; color: #888; }
+    .fc-client { font-size: 14px; color: var(--gold); margin-bottom: 4px; font-weight: bold;}
+    .fc-car { font-size: 13px; color: #aaa; margin-bottom: 10px; }
+    .fc-btn { display: inline-block; padding: 6px 12px; background: #222; color: var(--gold); text-decoration: none; border-radius: 4px; font-size: 11px; border: 1px solid #444; font-weight: bold; text-transform: uppercase;}
+    .car-marker { font-size: 24px; text-align: center; line-height: 24px; filter: drop-shadow(0 0 8px rgba(197, 160, 89, 0.8)); }
+    .marker-label { background: rgba(0,0,0,0.8); color: var(--gold); padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; white-space: nowrap; border: 1px solid var(--gold); margin-top: -10px; transform: translateX(-25%);}
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2000; justify-content: center; align-items: center; backdrop-filter: blur(5px);}
+    .modal-content { background: #0a0a0a; border: 1px solid var(--gold); border-radius: 8px; width: 90%; max-width: 500px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); max-height: 90vh; overflow-y: auto;}
+    .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 20px; }
+    .close-btn { background: transparent; color: #888; border: none; font-size: 24px; cursor: pointer;}
+    .close-btn:hover { color: white; }
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; font-size: 11px; color: var(--gold); text-transform: uppercase; margin-bottom: 5px; font-weight: bold;}
+    .form-group input, .form-group select { width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box; outline: none;}
+    .form-group input:focus, .form-group select:focus { border-color: var(--gold); }
+    .form-row { display: flex; gap: 10px; }
+    .form-row > input { flex: 1; }
+    .req-card { background: #111; border: 1px solid #ff9800; border-radius: 5px; padding: 15px; margin-bottom: 15px;}
+    .req-card h4 { margin: 0 0 10px 0; color: #ff9800; font-size: 16px;}
+    .req-card p { margin: 5px 0; font-size: 13px; color: #ccc;}
+    .btn-approve { background: #4caf50; color: white; border: none; padding: 8px; width: 100%; border-radius: 4px; margin-top: 10px; cursor: pointer; font-weight: bold;}
+  </style>
+</head>
+<body>
+  <div id="toast-container" style="position:fixed; bottom:20px; right:20px; z-index:9999; display:flex; flex-direction:column; gap:10px;"></div>
+
+  <div class="modal-overlay" id="shareLinkModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 style="margin:0; color:#4caf50; text-transform:uppercase;">🔗 Dispatch Link</h3>
+        <button class="close-btn" onclick="toggleModal('shareLinkModal')">✖</button>
+      </div>
+      <p style="font-size:13px; color:#ccc;">Send this link to the driver. It will automatically open the app and load their mission details.</p>
+      <input type="text" id="shareLinkUrl" readonly style="width:100%; padding:15px; background:#222; border:1px solid #444; color:white; margin-bottom:15px; font-size:12px;">
+      <button class="btn-action btn-green" style="width:100%; padding: 15px;" onclick="copyShareLink()">📋 Copy Link</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="recordsModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 style="margin:0; color:var(--gold); text-transform:uppercase;">📁 Driver Records</h3>
+        <button class="close-btn" onclick="toggleModal('recordsModal')">✖</button>
+      </div>
+      <div id="recordsBody" style="max-height: 60vh; overflow-y: auto;">Loading driver records...</div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="pendingModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 style="margin:0; color:#ff9800; text-transform:uppercase;">🛎️ Pending Requests</h3>
+        <button class="close-btn" onclick="toggleModal('pendingModal')">✖</button>
+      </div>
+      <div id="pendingBody">Fetching requests...</div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="dispatchModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 style="margin:0; color:#4caf50; text-transform:uppercase;">📅 Dispatch Mission</h3>
+        <button class="close-btn" onclick="toggleModal('dispatchModal')">✖</button>
+      </div>
+      <input type="hidden" id="pendingRowIdx" value=""><input type="hidden" id="editRowIdx" value="">
+      <div class="form-group"><label>Scheduled Start</label><div class="form-row"><input type="date" id="dDate" onchange="checkAvailability()"><input type="time" id="dTime" onchange="checkAvailability()"></div></div>
+      <div class="form-group"><label>Estimated End (Optional)</label><div class="form-row"><input type="date" id="dEndDate" onchange="checkAvailability()"><input type="time" id="dEndTime" onchange="checkAvailability()"></div></div>
+      <div class="form-group"><label>Assign Driver</label><input list="dNames" id="dName" placeholder="Select available driver..."><datalist id="dNames"></datalist></div>
+      <div class="form-group"><label>Client Name</label><input list="dClients" id="dClient" placeholder="Select client..."><datalist id="dClients"></datalist></div>
+      <div class="form-group"><label>Car Brand</label><select id="dBrand" onchange="dFilterTypes()"><option value="" disabled selected>Select Brand</option></select></div>
+      <div class="form-group"><label>Vehicle Type</label><select id="dType" onchange="dFilterNums()"><option value="" disabled selected>Select Type</option></select></div>
+      <div class="form-group"><label>License Plate</label><select id="dNum"><option value="" disabled selected>Select Plate</option></select></div>
+      <div class="form-group"><label>Service Type</label><select id="dService"><option value="TRF">TRF (Transfer)</option><option value="DISPO">DISPO (Hourly)</option></select></div>
+      <div class="form-group"><label>VIP Flight / Tail Number (Optional)</label><input type="text" id="dFlight" placeholder="e.g. AF1234" style="border-color:#4caf50;"></div>
+      <div class="form-group"><label>Special Instructions</label><input type="text" id="dNotes" placeholder="Notes for the driver..." style="border-color:#ff9800;"></div>
+      <button class="btn-action btn-green" id="btnDispatch" style="width:100%; padding:15px; font-size:14px;" onclick="sendDispatch()">🚀 Send to Driver App</button>
+    </div>
+  </div>
+
+  <div class="header">
+    <img src="https://i.postimg.cc/cJhXywng/aaa-luxury-sport-cars-rental-logo.jpg" alt="AAA Logo">
+    <div class="header-title">
+      Command Center
+      <button class="btn-action btn-pending" id="btnPendingAlert" onclick="openPending()">🛎️ Requests (<span id="reqCount">0</span>)</button>
+      <button class="btn-action" onclick="openRecords()">📁 Driver Records</button>
+      <button class="btn-action btn-green" onclick="openEmptyDispatch()">📅 Dispatch</button>
+    </div>
+  </div>
+
+  <div class="kpi-bar">
+    <div class="kpi-card"><div class="kpi-title">Active Fleet on Road</div><div class="kpi-value gold" id="kpi-active">0</div></div>
+    <div class="kpi-card"><div class="kpi-title">Cars Needing Wash/Fuel</div><div class="kpi-value red" id="kpi-clean">0</div></div>
+    <div class="kpi-card"><div class="kpi-title">Total VIP Shifts Today</div><div class="kpi-value" id="kpi-today">0</div></div>
+  </div>
+
+  <div class="main-content">
+    <div class="map-container"><div id="map"></div></div>
+    <div class="side-panels">
+      <div class="upcoming-container"><div class="feed-header"><span>⏳ Upcoming Missions</span></div><div class="feed-list" id="upcoming-list"></div></div>
+      <div class="feed-container"><div class="feed-header"><span>📡 Live Mission Feed</span><span id="refreshTimer" style="font-size:10px; color:#888;">Syncing...</span></div><div class="feed-list" id="feed-list"></div></div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // --- GITHUB PAGES API CONNECTION ---
+    const GAS_WEB_APP_URL = "YOUR_SCRIPT_URL_HERE"; // PASTE WEB APP URL HERE
+    
+    async function apiCall(fnName, ...args) {
+      if (GAS_WEB_APP_URL === "YOUR_SCRIPT_URL_HERE") { alert("Missing API URL!"); throw new Error("Missing API URL"); }
+      const response = await fetch(GAS_WEB_APP_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ functionName: fnName, arguments: args }) });
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    }
+
+    const $ = function(id) { return document.getElementById(id); };
+    let appDataGlobal = null;
+    let alertedShifts = {}; 
+    let webAppUrl = window.location.href.split('?')[0];
+
+    window.onload = function() {
+      apiCall("getAppData").then(data => {
+        if (data && data.error) showToast("Database Error: " + data.error);
+        appDataGlobal = data;
+        appDataGlobal.filteredVehicles = data.vehicleData; 
+        fillList("dNames", data.workers); 
+        fillList("dClients", data.clients);
+        fillList("dBrand", [...new Set(data.vehicleData.map(v => v.brand).filter(String))]);
+      }).catch(err => showToast("Init Error: " + err.message));
+      setTimeout(function(){ if(map) map.invalidateSize(); }, 500);
+    }
+
+    function toggleModal(id) { let el = $(id); el.style.display = el.style.display === "flex" ? "none" : "flex"; }
+    function toggleAcc(id) { let el = $(id); el.style.display = el.style.display === "none" ? "block" : "none"; }
+
+    function showToast(msg) {
+      let t = document.createElement('div');
+      t.style.background = msg.includes("Error") ? '#f44336' : '#222'; 
+      if(msg.includes("Error")) t.style.border = '1px solid #fff';
+      t.style.color = '#fff'; t.style.padding = '15px'; t.style.borderRadius = '5px';
+      t.style.boxShadow = '0 4px 10px rgba(0,0,0,0.8)'; t.style.fontWeight = 'bold'; t.style.fontSize = '13px'; t.style.textTransform = 'uppercase';
+      t.innerText = msg; $('toast-container').appendChild(t); setTimeout(() => t.remove(), 12000); 
+    }
+
+    function showShareLink(driverName) {
+      let url = webAppUrl + "?driver=" + encodeURIComponent(driverName);
+      $('shareLinkUrl').value = url; toggleModal('shareLinkModal');
+    }
+    function copyShareLink() { $('shareLinkUrl').select(); document.execCommand("copy"); showToast("Magic Link Copied!"); }
+
+    function checkAvailability() {
+      if (!appDataGlobal || !appDataGlobal.workers) return;
+      let dBrandEl = $('dBrand'), dTypeEl = $('dType'), dNumEl = $('dNum');
+      let cBrand = dBrandEl.value, cType = dTypeEl.value, cNum = dNumEl.value;
+      let sd = $('dDate').value, st = $('dTime').value, ed = $('dEndDate').value, et = $('dEndTime').value;
+      let startMs = (sd && st) ? new Date(`${sd}T${st}`).getTime() : null;
+      let endMs = (ed && et) ? new Date(`${ed}T${et}`).getTime() : null;
+      let busyDrivers = new Set(), busyCars = new Set();
+      if (startMs) {
+        let checkEndMs = endMs || (startMs + (4 * 3600000)); 
+        appDataGlobal.schedules.forEach(s => {
+          let sStart = new Date(s.start).getTime(); if (isNaN(sStart)) return;
+          let sEnd = s.end ? new Date(s.end).getTime() : (sStart + (4 * 3600000));
+          if (startMs < sEnd && checkEndMs > sStart) { if (s.driver) busyDrivers.add(s.driver); if (s.carPlate) busyCars.add(s.carPlate); }
+        });
+      }
+      let availWorkers = appDataGlobal.workers.filter(w => !busyDrivers.has(w)); fillList("dNames", availWorkers);
+      appDataGlobal.filteredVehicles = appDataGlobal.vehicleData.filter(v => !busyCars.has(v.num));
+      fillList("dBrand", [...new Set(appDataGlobal.filteredVehicles.map(v => v.brand).filter(String))]);
+      if (cBrand && [...dBrandEl.options].some(o => o.value === cBrand)) {
+        dBrandEl.value = cBrand; dFilterTypes(); 
+        if (cType && [...dTypeEl.options].some(o => o.value === cType)) { dTypeEl.value = cType; dFilterNums(); if (cNum && [...dNumEl.options].some(o => o.value === cNum)) dNumEl.value = cNum; }
+      } else { dTypeEl.innerHTML = '<option value="" disabled selected>Select Type</option>'; dNumEl.innerHTML = '<option value="" disabled selected>Select Plate</option>'; }
+    }
+    
+    function openEmptyDispatch() {
+      $('pendingRowIdx').value = ""; $('editRowIdx').value = "";
+      $('dName').value = ""; $('dClient').value = ""; $('dBrand').value = ""; $('dType').value = ""; $('dNum').value = ""; $('dService').value = "TRF";
+      let today = new Date(); $('dDate').value = today.toISOString().split('T')[0]; $('dTime').value = ""; $('dEndDate').value = ""; $('dEndTime').value = ""; $('dFlight').value = ""; $('dNotes').value = "";
+      $('btnDispatch').innerText = "🚀 Send to Driver App"; checkAvailability(); toggleModal('dispatchModal');
+    }
+
+    function openEditDispatch(itemJsonStr) {
+      let item = JSON.parse(decodeURIComponent(itemJsonStr));
+      $('pendingRowIdx').value = ""; $('editRowIdx').value = item.rowIdx;
+      $('dName').value = item.driver || ""; $('dClient').value = item.client || ""; $('dBrand').value = item.brand || "";
+      dFilterTypes(); $('dType').value = item.vType || ""; dFilterNums(); $('dNum').value = item.vNum || ""; $('dService').value = item.service || "TRF";
+      if (item.rawDate) { let d = new Date(item.rawDate); $('dDate').value = d.toISOString().split('T')[0]; $('dTime').value = d.toTimeString().substring(0,5); }
+      $('dFlight').value = item.flightNum || ""; $('dNotes').value = item.notes || "";
+      $('btnDispatch').innerText = "💾 Update Shift"; toggleModal('dispatchModal');
+    }
+
+    function deleteDispatch(rowIdx) {
+      if(!confirm("Are you sure you want to delete this mission?")) return;
+      showToast("Deleting...");
+      apiCall("deleteShift", rowIdx).then(res => { showToast(res.msg); updateDashboard(); }).catch(err => showToast("Error: " + err.message));
+    }
+
+    function openPending() {
+      toggleModal('pendingModal'); $('pendingBody').innerHTML = "<p style='color:#888;'>Loading requests...</p>";
+      apiCall("getPendingRequests").then(data => {
+        if(!data || data.length === 0) return $('pendingBody').innerHTML = "<p style='color:#888;'>No pending requests.</p>";
+        let html = "";
+        data.forEach(req => {
+          let dateStr = req.date ? new Date(req.date).toLocaleString() : "Date TBD";
+          html += `<div class="req-card"><h4>👤 ${req.client}</h4><p><strong>Date:</strong> ${dateStr}</p><p><strong>Service:</strong> ${req.service}</p><p><strong>Details:</strong> ${req.details}</p><button class="btn-approve" onclick="approvePending(${req.row}, '${req.client}')">Approve & Dispatch</button></div>`;
+        });
+        $('pendingBody').innerHTML = html;
+      }).catch(err => $('pendingBody').innerHTML = "<p style='color:#f44336;'>Error: " + err.message + "</p>");
+    }
+
+    function approvePending(row, client) { toggleModal('pendingModal'); openEmptyDispatch(); $('pendingRowIdx').value = row; $('dClient').value = client; }
+
+    function openRecords() {
+      toggleModal('recordsModal'); $("recordsBody").innerHTML = "<p style='color:#888;'>Fetching history...</p>";
+      apiCall("getDriverRecords").then(data => {
+        if (data && data.error) return $("recordsBody").innerHTML = "<p style='color:#f44336;'>Error: " + data.error + "</p>";
+        let html = "", idCounter = 0;
+        for (let driver in data) {
+          idCounter++; let accId = "acc_" + idCounter;
+          html += `<div style="background:#222; margin-bottom:10px; border-radius:5px; border:1px solid #333;"><div style="padding:15px; font-weight:bold; cursor:pointer; color:var(--gold); font-size:16px;" onclick="toggleAcc('${accId}')">👤 ${driver} ▾</div><div id="${accId}" style="display:none; padding:15px; border-top:1px solid #333; background:#1a1a1a;">`;
+          for (let month in data[driver]) {
+            html += `<div style="margin-bottom:15px;"><div style="font-weight:bold; color:#4caf50; font-size:14px; border-bottom:1px solid #4caf50; padding-bottom:5px; margin-bottom:10px;">📅 ${month}</div>`;
+            data[driver][month].forEach(m => {
+              let pdfLink = m.pdf ? `<a href="${m.pdf}" target="_blank" style="background:var(--gold); color:#000; padding:6px 10px; border-radius:4px; font-size:11px; text-decoration:none; font-weight:bold; text-transform:uppercase;">📄 View PDF</a>` : `<span style="color:#666; font-size:11px;">No PDF</span>`;
+              html += `<div style="display:flex; justify-content:space-between; align-items:center; background:#111; padding:12px; margin-bottom:8px; border-radius:4px; font-size:13px; border-left:3px solid var(--gold);"><div><b style="color:white;">${m.dateStr}</b><br><span style="color:#aaa;">${m.client}</span><br><span style="color:#888; font-size:11px;">${m.car}</span></div><div>${pdfLink}</div></div>`;
+            });
+            html += `</div>`;
+          }
+          html += `</div></div>`;
+        }
+        $("recordsBody").innerHTML = html || "<p style='color:#888;'>No completed missions on record.</p>";
+      }).catch(err => $("recordsBody").innerHTML = "<p style='color:#f44336;'>Error: " + err.message + "</p>");
+    }
+
+    function fillList(id, items) {
+      let el = $(id); if (!el) return;
+      let isSelect = el.tagName === "SELECT", firstOpt = isSelect && el.options.length > 0 ? el.options[0].cloneNode(true) : null;
+      el.innerHTML = ""; if (firstOpt) el.appendChild(firstOpt);
+      if (items && items.length) {
+        let frag = document.createDocumentFragment();
+        items.forEach(i => { let opt = document.createElement("option"); opt.value = String(i || "").trim(); if (isSelect) opt.textContent = String(i || "").trim(); frag.appendChild(opt); });
+        el.appendChild(frag);
+      }
+    }
+    
+    function dFilterTypes() { if(!appDataGlobal) return; fillList("dType", [...new Set((appDataGlobal.filteredVehicles || appDataGlobal.vehicleData).filter(v => v.brand === $("dBrand").value).map(v => v.type).filter(String))]); }
+    function dFilterNums() { if(!appDataGlobal) return; fillList("dNum", [...new Set((appDataGlobal.filteredVehicles || appDataGlobal.vehicleData).filter(v => v.brand === $("dBrand").value && v.type === $("dType").value).map(v => v.num).filter(String))]); }
+
+    function sendDispatch() {
+      let payload = { driver: $("dName").value, client: $("dClient").value, brand: $("dBrand").value, vType: $("dType").value, vNum: $("dNum").value, service: $("dService").value, date: $("dDate").value, time: $("dTime").value, endDate: $("dEndDate").value, endTime: $("dEndTime").value, flightNum: $("dFlight").value, notes: $("dNotes").value };
+      if(!payload.driver || !payload.client || !payload.brand || !payload.date || !payload.time) return alert("Please fill all required fields.");
+      
+      let pendingRow = $("pendingRowIdx").value, editRow = $("editRowIdx").value, btn = $("btnDispatch"); 
+      btn.innerText = "Sending..."; btn.disabled = true;
+      
+      let fn = editRow ? "editShift" : (pendingRow ? "approveBooking" : "assignShift");
+      let args = editRow ? [editRow, payload] : (pendingRow ? [pendingRow, payload] : [payload]);
+      
+      apiCall(fn, ...args).then(res => {
+        if(res.msg && res.msg.includes("Error")) { alert(res.msg); btn.innerText = editRow ? "💾 Update Shift" : "🚀 Send to Driver App"; btn.disabled = false; return; }
+        toggleModal('dispatchModal'); updateDashboard(); showShareLink(res.driver); btn.disabled = false;
+      }).catch(err => { showToast("Server Error: " + err.message); btn.innerText = editRow ? "💾 Update Shift" : "🚀 Send to Driver App"; btn.disabled = false; });
+    }
+
+    let map = L.map('map').setView([48.8566, 2.3522], 13);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
+    let markers = {}; 
+
+    function updateDashboard() {
+      $('refreshTimer').innerText = "Syncing...";
+      apiCall("getManagerData").then(data => {
+        if (!data || data.error) return showToast(data ? "Error: " + data.error : "Sync Failed!");
+        $('kpi-active').innerText = data.kpis.activeCount; $('kpi-clean').innerText = data.kpis.cleanCount; $('kpi-today').innerText = data.kpis.totalToday;
+        if(data.kpis.pendingCount > 0) { $('btnPendingAlert').style.display = "inline-block"; $('reqCount').innerText = data.kpis.pendingCount; } else $('btnPendingAlert').style.display = "none";
+
+        let activeDriversSet = new Set();
+        data.active.forEach(m => {
+          activeDriversSet.add(m.driver);
+          if (m.lat && m.lng) {
+            let latLng = [parseFloat(m.lat), parseFloat(m.lng)];
+            if (markers[m.driver]) markers[m.driver].setLatLng(latLng); else {
+              let customIcon = L.divIcon({ className: 'custom-div-icon', html: "<div class='car-marker'>🚘</div><div class='marker-label'>" + m.driver + "</div>", iconSize: [30, 30], iconAnchor: [15, 15] });
+              markers[m.driver] = L.marker(latLng, {icon: customIcon}).addTo(map);
+            }
+          }
+        });
+        for (let d in markers) if (!activeDriversSet.has(d)) { map.removeLayer(markers[d]); delete markers[d]; }
+        
+        let upcomingHtml = "";
+        data.upcoming.forEach(item => {
+          let statusClass = item.isLate ? "late" : "upcoming", statusText = item.isLate ? "🔴 LATE (>5 MINS)" : "🟡 UPCOMING";
+          let itemJsonStr = encodeURIComponent(JSON.stringify(item));
+          let actionBtns = `<button class="btn-action" style="background:#444; color:#fff;" onclick="openEditDispatch('${itemJsonStr}')">✏️ Edit</button> <button class="btn-action" style="background:#f44336; color:#fff; margin-left:5px;" onclick="deleteDispatch(${item.rowIdx})">🗑️ Delete</button>`;
+          upcomingHtml += `<div class="feed-card ${statusClass}"><div class="fc-top"><div class="fc-driver">${item.driver} <div>${actionBtns}</div></div><div class="fc-time">${item.time} | ${statusText}</div></div><div class="fc-client">👤 ${item.client}</div><div class="fc-car">🚗 ${item.brand} ${item.vType}</div></div>`;
+          let shiftId = item.driver + "_" + item.client + "_" + item.time;
+          if (item.isLate && !alertedShifts[shiftId]) { showToast("🚨 ALERT: " + item.driver + " hasn't started the " + item.time + " mission!"); alertedShifts[shiftId] = true; }
+        });
+        $('upcoming-list').innerHTML = upcomingHtml || "<div style='color:#888; padding:15px; text-align:center; font-size:12px;'>No upcoming missions</div>";
+
+        let feedHtml = "";
+        data.feed.forEach(item => {
+          let statusClass = item.status === "Open" ? "active" : "closed", statusText = item.status === "Open" ? "🟢 ON DUTY" : "⚫ COMPLETED";
+          let pdfBtn = item.pdf ? `<a href="${item.pdf}" target="_blank" class="fc-btn">📄 View Report</a>` : "";
+          feedHtml += `<div class="feed-card ${statusClass}"><div class="fc-top"><div class="fc-driver">${item.driver}</div><div class="fc-time">${item.time} | ${statusText}</div></div><div class="fc-client">👤 ${item.client}</div><div class="fc-car">🚗 ${item.brand}</div>${pdfBtn}</div>`;
+        });
+        $('feed-list').innerHTML = feedHtml || "<div style='color:#888; padding:15px; text-align:center; font-size:12px;'>No live missions</div>";
+        
+        let now = new Date(); $('refreshTimer').innerText = "Last Sync: " + now.getHours() + ":" + (now.getMinutes()<10?'0':'') + now.getMinutes();
+        apiCall("getAppData").then(d => { if(d && !d.error) { appDataGlobal = d; if($('dispatchModal').style.display !== 'flex') checkAvailability(); }});
+      }).catch(err => { $('refreshTimer').innerText = "Sync Failed!"; showToast("Data Sync Error: " + err.message); });
+    }
+    
+    updateDashboard(); setInterval(updateDashboard, 15000);
+  </script>
+</body>
+</html>

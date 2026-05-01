@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fleet Maintenance</title>
+  <style>
+    :root { --gold: #c5a059; --dark: #0a0a0a; --card: #1a1a1a; --red: #e74c3c; --green: #2ecc71; }
+    body { font-family: sans-serif; background: var(--dark); color: white; padding: 20px; margin: 0; }
+    .header { text-align: center; margin-bottom: 30px; border-bottom: 1px solid var(--gold); padding-bottom: 10px; }
+    .header img { max-width: 120px; }
+    #navBar { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; min-height: 40px; }
+    #navBar h3 { margin: 0; color: white; font-weight: normal; }
+    .back-btn { background: #333; color: white; border: 1px solid var(--gold); padding: 8px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+    .back-btn:hover { background: var(--gold); color: var(--dark); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+    .car-card { background: var(--card); border: 1px solid #333; border-radius: 8px; padding: 15px; position: relative; overflow: hidden; cursor: pointer; transition: transform 0.2s; }
+    .car-card:hover { transform: scale(1.02); border-color: var(--gold); }
+    .nav-card { cursor: pointer; display: flex; align-items: center; justify-content: center; min-height: 100px; transition: transform 0.2s, border-color 0.2s; }
+    .nav-card:hover { transform: translateY(-3px); border-color: var(--gold); background: #222; }
+    .nav-title { font-size: 1.5em; font-weight: bold; color: var(--gold); margin: 0; text-align: center; }
+    .car-card.on-duty { border-left: 5px solid var(--gold); }
+    .car-card.dirty { border-top: 5px solid var(--red); }
+    .plate { font-family: monospace; background: #333; padding: 2px 6px; border-radius: 4px; color: var(--gold); font-size: 1.1em; }
+    .brand { font-weight: bold; font-size: 1.2em; margin-top: 10px; }
+    .status-badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; text-transform: uppercase; margin-top: 10px; }
+    .bg-green { background: rgba(46, 204, 113, 0.2); color: var(--green); }
+    .bg-gold { background: rgba(197, 160, 89, 0.2); color: var(--gold); }
+    .bg-red { background: rgba(231, 76, 60, 0.2); color: var(--red); }
+    .driver-info { margin-top: 15px; font-size: 14px; color: #888; border-top: 1px solid #333; padding-top: 10px; }
+    .loader { text-align: center; color: var(--gold); margin-top: 50px; font-size: 18px; }
+    .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); overflow: auto; }
+    .modal-content { background-color: var(--card); margin: 5% auto; padding: 20px; border: 1px solid var(--gold); width: 90%; max-width: 600px; border-radius: 8px; position: relative; }
+    .close-modal { color: var(--gold); float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+    .close-modal:hover { color: white; }
+    textarea, .kms-input { background: #222; color: white; border: 1px solid #444; padding: 10px; border-radius: 5px; font-family: inherit; box-sizing: border-box; }
+    textarea { width: 100%; height: 100px; margin-bottom: 10px; resize: vertical; }
+    .kms-input { width: 120px; padding: 8px; font-weight: bold; color: var(--gold); }
+    .action-btn { background: var(--gold); color: var(--dark); border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+    .action-btn:hover { background: white; }
+    .file-input { margin: 10px 0; color: white; display: block; }
+    .filters-container { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 10px; margin-bottom: 20px; border-bottom: 1px solid #333; }
+    .filter-btn { background: #333; color: white; border: 1px solid #555; padding: 10px 16px; border-radius: 20px; cursor: pointer; font-size: 14px; transition: 0.2s; white-space: nowrap; }
+    .filter-btn:hover, .filter-btn.active { background: var(--gold); color: var(--dark); border-color: var(--gold); font-weight: bold; }
+    .gallery-group { margin-bottom: 20px; }
+    .gallery-title { color: white; border-bottom: 1px solid #444; padding-bottom: 5px; margin-bottom: 10px; font-size: 1.1em; }
+    .gallery { display: flex; gap: 10px; flex-wrap: wrap; padding-bottom: 10px; }    
+    .gallery img { height: 100px; width: 140px; border-radius: 5px; border: 1px solid #444; object-fit: cover; transition: 0.2s; cursor: pointer; }
+    .gallery img:hover { border-color: var(--gold); transform: scale(1.05); }
+    .flex-upload-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 15px; background: #111; padding: 15px; border-radius: 8px; border: 1px solid #333; }
+    .flex-upload-row > div { flex: 1; min-width: 200px; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <img src="https://i.postimg.cc/cJhXywng/aaa-luxury-sport-cars-rental-logo.jpg">
+    <h2 style="color: var(--gold);">Fleet Maintenance & Status</h2>
+  </div>
+
+  <div id="loader" class="loader">Scanning Fleet...</div>
+  
+  <div id="navBar"></div>
+  <div id="fleetGrid" class="grid"></div>
+
+  <div id="carModal" class="modal">
+    <div class="modal-content">
+      <span class="close-modal" onclick="closeModal()">×</span>
+      <h2 id="modalCarTitle" style="color: var(--gold); margin-top: 0;">Car Details</h2>
+      <p id="modalCarSubtitle" style="color: #888; margin-bottom: 15px;"></p>
+      
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px; background: #111; padding: 10px 15px; border-radius: 8px; border: 1px solid #333;">
+        <span style="color: white; font-weight: bold;">🛣️ KMS:</span>
+        <input type="number" id="carKmsInput" class="kms-input" placeholder="Enter KMS">
+        <button class="action-btn" onclick="saveKms()" style="padding: 8px 12px;">Update KMS</button>
+        <span id="kmsStatus" style="font-weight: bold; font-size: 14px; margin-left: 5px;"></span>
+      </div>
+      
+      <div id="galleryFilters" class="filters-container"></div>
+      <p id="selectCategoryPrompt" style="color: var(--gold); text-align: center; margin-bottom: 20px; display: none;">👇 Select a specific tab above to View/Edit its Notes and Upload Photos.</p>
+
+      <div id="notesUI" style="display:none;">
+        <h3 id="noteSectionTitle" style="margin-top: 0;">Reports & Notes</h3>
+        <textarea id="modalNotes" placeholder="Write a note..."></textarea>
+        <button class="action-btn" onclick="saveNote()">Save Note</button>
+        <span id="noteStatus" style="margin-left: 10px; font-weight: bold;"></span>
+        <hr style="border-color: #333; margin: 25px 0;">
+      </div>
+
+      <div id="uploadUI" style="display:none;">
+        <h3 style="margin-bottom: 10px;">Add Photos</h3>
+        <div class="flex-upload-row">
+          <div>
+            <label id="photoCategoryLabel" style="font-size: 14px; color: var(--gold); display:block; margin-bottom: 5px; font-weight: bold;"></label>
+            <input type="file" id="photoInput" class="file-input" accept="image/*" multiple style="margin: 0;">
+          </div>
+          <div><button class="action-btn" onclick="uploadPhotos()" style="width: 100%;">Upload Photos</button></div>
+        </div>
+        <div id="uploadStatus" style="font-weight: bold; color: var(--gold); margin-bottom: 15px; text-align: center;"></div>
+      </div>
+      
+      <div id="modalGalleryContainer" style="background: #111; padding: 15px; border-radius: 8px; border: 1px solid #333;">
+         <p style="color:#888; text-align:center;">Loading gallery...</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="imageViewer" class="modal" style="z-index: 2000; background-color: rgba(0,0,0,0.95); text-align:center;">
+    <span class="close-modal" onclick="closeImageViewer()" style="position: absolute; top: 15px; right: 25px; color: #fff; font-size: 40px; cursor: pointer;">×</span>
+    <div style="display:flex; justify-content:center; align-items:center; height:100%;"><img id="fullSizeImage" style="max-width: 95%; max-height: 90vh; border: 2px solid var(--gold); border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5);"></div>
+  </div>
+
+  <script>
+    // --- GITHUB PAGES API CONNECTION ---
+    const GAS_WEB_APP_URL = "YOUR_SCRIPT_URL_HERE"; // PASTE WEB APP URL HERE
+    
+    async function apiCall(fnName, ...args) {
+      if (GAS_WEB_APP_URL === "YOUR_SCRIPT_URL_HERE") throw new Error("Missing API URL");
+      const response = await fetch(GAS_WEB_APP_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ functionName: fnName, arguments: args }) });
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    }
+
+    let globalFleet = [], currentView = 'brands', selectedBrand = '', selectedType = '', currentlyEditingPlate = '', currentCarData = null, currentActiveFilter = 'All'; 
+    const urlParams = new URLSearchParams(window.location.search);
+    let targetPlateToOpen = urlParams.get('plate') || "";
+
+    window.onload = function() { apiCall("getFleetMaintenanceStatus").then(initializeFleet).catch(err => alert("Error loading fleet: " + err)); };
+
+    function initializeFleet(fleet) {
+      document.getElementById('loader').style.display = 'none';
+      globalFleet = fleet; showBrands();
+      if (targetPlateToOpen && targetPlateToOpen.trim() !== "") {
+        let carExists = globalFleet.find(c => c.plate === targetPlateToOpen);
+        if (carExists) openModal(targetPlateToOpen); else alert("NFC Error: Car plate not found.");
+      }
+    }
+
+    function updateFleetSilently(fleet) {
+      globalFleet = fleet;
+      if (currentView === 'brands') showBrands(); else if (currentView === 'types') showTypes(selectedBrand); else if (currentView === 'cars') showCars(selectedBrand, selectedType);
+    }
+
+    function getGroupedData() {
+      const grouped = {};
+      globalFleet.forEach(car => { if (!car.brand) return; if (!grouped[car.brand]) grouped[car.brand] = {}; if (!grouped[car.brand][car.type]) grouped[car.brand][car.type] = []; grouped[car.brand][car.type].push(car); });
+      return grouped;
+    }
+
+    function showBrands() {
+      currentView = 'brands'; const grouped = getGroupedData(), brands = Object.keys(grouped).sort(); 
+      let html = ""; brands.forEach(brand => { html += `<div class="car-card nav-card" onclick="showTypes('${brand.replace(/'/g, "\\'")}')"><h3 class="nav-title">${brand}</h3></div>`; });
+      document.getElementById('navBar').innerHTML = `<h3>Select a Brand</h3>`; document.getElementById('fleetGrid').innerHTML = html;
+    }
+
+    function showTypes(brand) {
+      currentView = 'types'; selectedBrand = brand; const grouped = getGroupedData(), types = Object.keys(grouped[brand]).sort(); 
+      let html = ""; types.forEach(type => { html += `<div class="car-card nav-card" onclick="showCars('${brand.replace(/'/g, "\\'")}', '${type.replace(/'/g, "\\'")}')"><h3 class="nav-title">${type || 'Standard'}</h3></div>`; });
+      document.getElementById('navBar').innerHTML = `<button class="back-btn" onclick="showBrands()">⬅ Back</button> <h3>${brand} ➔ Select Category</h3>`; document.getElementById('fleetGrid').innerHTML = html;
+    }
+
+    function showCars(brand, type) {
+      currentView = 'cars'; selectedType = type; const grouped = getGroupedData(); let cars = grouped[brand][type];
+      cars.sort((a, b) => a.status === "On Duty" ? -1 : 1);
+      let html = "";
+      cars.forEach(function(car) {
+        var statusClass = car.status === "On Duty" ? "on-duty" : "", dirtyClass = car.clean === "Dirty" ? "dirty" : "";
+        var badgeClass = car.status === "On Duty" ? "bg-gold" : "bg-green", cleanBadge = car.clean === "Dirty" ? `<span class="status-badge bg-red">🚨 NEEDS CLEANING</span>` : `<span class="status-badge bg-green">✨ CLEAN</span>`;
+        html += `<div class="car-card ${statusClass} ${dirtyClass}" onclick="openModal('${car.plate}')"><span class="plate">${car.plate}</span><div class="brand">${car.brand} ${car.type}</div><div style="display:flex; gap: 5px;"><span class="status-badge ${badgeClass}">${car.status}</span>${cleanBadge}</div><div class="driver-info"><div style="margin-bottom: 5px; color: white;">🛣️ KMS: <span style="color:var(--gold); font-weight:bold;">${car.kms ? car.kms : 'N/A'}</span></div>${car.status === "On Duty" ? '👤 Driver: <b>' + car.driver + '</b>' : '📍 Location: AAA Garage'}</div></div>`;
+      });
+      document.getElementById('navBar').innerHTML = `<button class="back-btn" onclick="showTypes('${brand.replace(/'/g, "\\'")}')">⬅ Back</button> <h3>${brand} ${type} ➔ Fleet</h3>`; document.getElementById('fleetGrid').innerHTML = html;
+    }
+
+    function openModal(plate) {
+      currentlyEditingPlate = plate; const car = globalFleet.find(c => c.plate === plate);
+      document.getElementById('modalCarTitle').innerText = `${car.brand} ${car.type} - ${car.plate}`; document.getElementById('modalCarSubtitle').innerText = car.status === "On Duty" ? `Currently with ${car.driver}` : "Currently in Garage";
+      document.getElementById('carKmsInput').value = car.kms || ''; document.getElementById('kmsStatus').innerText = ''; document.getElementById('carModal').style.display = "block";
+      document.getElementById('noteStatus').innerText = ""; document.getElementById('uploadStatus').innerText = ""; document.getElementById('photoInput').value = ""; document.getElementById('galleryFilters').innerHTML = ""; 
+      document.getElementById('notesUI').style.display = 'none'; document.getElementById('uploadUI').style.display = 'none'; document.getElementById('selectCategoryPrompt').style.display = 'none';
+      loadCarDetails(plate);
+    }
+
+    function loadCarDetails(plate) {
+      document.getElementById('modalGalleryContainer').innerHTML = "<p style='color:var(--gold); text-align:center;'>Fetching Vehicle History...</p>";
+      apiCall("getCarDetails", plate).then(data => { currentCarData = data; renderFilters(); renderTabContent('Main'); });
+    }
+
+    function renderFilters() {
+      if(!currentCarData) return;
+      let allCategories = ["Main", "Scratches"];
+      if(currentCarData.missions) currentCarData.missions.forEach(m => { if(!allCategories.includes(m)) allCategories.push(m); });
+      let filterHtml = `<button id="btn-filter-All" class="filter-btn" onclick="renderTabContent('All')">👀 View All Photos</button>`;
+      allCategories.forEach(cat => {
+        const safeId = cat.replace(/[^a-zA-Z0-9]/g, "-"); let label = cat === "Main" ? "🚗 Main Profile" : (cat === "Scratches" ? "⚠️ Scratches/Damage" : `📋 Mission: ${cat}`);
+        filterHtml += `<button id="btn-filter-${safeId}" class="filter-btn" onclick="renderTabContent('${cat}')">${label}</button>`;
+      });
+      document.getElementById('galleryFilters').innerHTML = filterHtml;
+    }
+
+    function renderTabContent(filterCategory) {
+      if(!currentCarData) return; currentActiveFilter = filterCategory;
+      document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+      const safeId = filterCategory === 'All' ? 'All' : filterCategory.replace(/[^a-zA-Z0-9]/g, "-");
+      const activeBtn = document.getElementById('btn-filter-' + safeId); if(activeBtn) activeBtn.classList.add('active');
+
+      if (filterCategory === 'All') {
+        document.getElementById('notesUI').style.display = 'none'; document.getElementById('uploadUI').style.display = 'none'; document.getElementById('selectCategoryPrompt').style.display = 'block';
+      } else {
+        document.getElementById('selectCategoryPrompt').style.display = 'none'; document.getElementById('notesUI').style.display = 'block'; document.getElementById('uploadUI').style.display = 'block';
+        let titleText = filterCategory === 'Main' ? "Main Car Notes" : (filterCategory === 'Scratches' ? "Scratches & Damage Notes" : `Notes for Mission: ${filterCategory}`);
+        document.getElementById('noteSectionTitle').innerText = titleText; document.getElementById('photoCategoryLabel').innerText = `Uploading directly to: ${filterCategory}`;
+        document.getElementById('modalNotes').value = (currentCarData.notes && currentCarData.notes[filterCategory]) ? currentCarData.notes[filterCategory] : ""; document.getElementById('noteStatus').innerText = ""; 
+      }
+
+      const photos = currentCarData.photos || {}; let galHtml = "", hasPhotos = false;
+      const renderGroup = (catName, displayTitle) => { if ((filterCategory === 'All' || filterCategory === catName) && photos[catName] && photos[catName].length > 0) { hasPhotos = true; galHtml += buildGalleryGroup(displayTitle, photos[catName]); } };
+      renderGroup('Main', 'Main Car Photos'); renderGroup('Scratches', 'Scratches & Damage');
+      for (let cat in photos) if (cat !== "Main" && cat !== "Scratches" && photos[cat].length > 0) if (filterCategory === 'All' || filterCategory === cat) { hasPhotos = true; galHtml += buildGalleryGroup(`Mission: ${cat}`, photos[cat]); }
+      if(!hasPhotos) galHtml = "<p style='color:#888; font-size:14px; text-align:center;'>No photos uploaded yet for this selection.</p>";
+      document.getElementById('modalGalleryContainer').innerHTML = galHtml;
+    }
+
+    function buildGalleryGroup(title, photoArray) { return `<div class="gallery-group"><h4 class="gallery-title">${title}</h4><div class="gallery">${photoArray.map(p => `<img src="${p.thumb}" title="${p.name}" onclick="viewImageFullscreen('${p.url}')">`).join('')}</div></div>`; }
+    function viewImageFullscreen(url) { document.getElementById('fullSizeImage').src = url; document.getElementById('imageViewer').style.display = 'block'; }
+    function closeImageViewer() { document.getElementById('imageViewer').style.display = 'none'; document.getElementById('fullSizeImage').src = ""; }
+    function closeModal() { document.getElementById('carModal').style.display = "none"; currentlyEditingPlate = ''; }
+    window.onclick = function(event) { if (event.target == document.getElementById('carModal')) closeModal(); if (event.target == document.getElementById('imageViewer')) closeImageViewer(); }
+
+    function saveKms() {
+      const kmsValue = document.getElementById('carKmsInput').value; if(!kmsValue) return;
+      document.getElementById('kmsStatus').innerText = "Saving..."; document.getElementById('kmsStatus').style.color = "var(--gold)";
+      apiCall("saveCarKms", currentlyEditingPlate, kmsValue).then(() => {
+        document.getElementById('kmsStatus').innerText = "Saved!"; document.getElementById('kmsStatus').style.color = "var(--green)";
+        const carIndex = globalFleet.findIndex(c => c.plate === currentlyEditingPlate); if(carIndex > -1) globalFleet[carIndex].kms = kmsValue;
+        if (currentView === 'cars') showCars(selectedBrand, selectedType);
+      }); 
+    }
+
+    function saveNote() {
+      if(currentActiveFilter === 'All') return;
+      const noteText = document.getElementById('modalNotes').value; document.getElementById('noteStatus').innerText = "Saving..."; document.getElementById('noteStatus').style.color = "var(--gold)";
+      apiCall("saveCarNote", currentlyEditingPlate, currentActiveFilter, noteText).then(() => {
+        document.getElementById('noteStatus').innerText = "Saved!"; document.getElementById('noteStatus').style.color = "var(--green)";
+        if(!currentCarData.notes) currentCarData.notes = {}; currentCarData.notes[currentActiveFilter] = noteText;
+      }); 
+    }
+
+    function uploadPhotos() {
+      if(currentActiveFilter === 'All') return;
+      const fileInput = document.getElementById('photoInput'), files = fileInput.files;
+      if (files.length === 0) return document.getElementById('uploadStatus').innerText = "Please select a file first.";
+      document.getElementById('uploadStatus').innerText = `Uploading 0 / ${files.length}...`; let uploadedCount = 0;
+
+      function uploadNext(index) {
+        if (index >= files.length) {
+           document.getElementById('uploadStatus').innerText = "All uploads successful!"; fileInput.value = ""; 
+           apiCall("getCarDetails", currentlyEditingPlate).then(data => { currentCarData = data; renderFilters(); renderTabContent(currentActiveFilter); });
+           return;
+        }
+        const file = files[index], reader = new FileReader();
+        reader.onload = function(e) {
+          const base64Data = e.target.result;
+          apiCall("uploadCarPhoto", currentlyEditingPlate, base64Data, file.name, file.type, currentActiveFilter).then(() => {
+            uploadedCount++; document.getElementById('uploadStatus').innerText = `Uploading ${uploadedCount} / ${files.length}...`; uploadNext(index + 1);
+          });
+        }; reader.readAsDataURL(file);
+      }
+      uploadNext(0); 
+    }
+
+    setInterval(function() { if(document.getElementById('carModal').style.display !== "block" && document.getElementById('imageViewer').style.display !== "block") apiCall("getFleetMaintenanceStatus").then(updateFleetSilently); }, 30000);
+  </script>
+</body>
+</html>

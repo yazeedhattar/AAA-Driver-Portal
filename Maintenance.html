@@ -7,8 +7,15 @@
   <style>
     :root { --gold: #c5a059; --dark: #0a0a0a; --card: #1a1a1a; --red: #e74c3c; --green: #2ecc71; }
     body { font-family: sans-serif; background: var(--dark); color: white; padding: 20px; margin: 0; }
-    .header { text-align: center; margin-bottom: 30px; border-bottom: 1px solid var(--gold); padding-bottom: 10px; }
+    .header { text-align: center; margin-bottom: 20px; border-bottom: 1px solid var(--gold); padding-bottom: 10px; }
     .header img { max-width: 120px; }
+    
+    /* Search Bar Styles */
+    .search-container { text-align: center; margin-bottom: 20px; }
+    .search-input { width: 90%; max-width: 400px; padding: 12px 20px; border-radius: 25px; border: 1px solid var(--gold); background: #1a1a1a; color: white; font-size: 16px; outline: none; transition: 0.3s; }
+    .search-input:focus { box-shadow: 0 0 10px rgba(197, 160, 89, 0.5); }
+    .search-input::placeholder { color: #888; }
+
     #navBar { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; min-height: 40px; }
     #navBar h3 { margin: 0; color: white; font-weight: normal; }
     .back-btn { background: #333; color: white; border: 1px solid var(--gold); padding: 8px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.2s; }
@@ -44,7 +51,7 @@
     .filter-btn:hover, .filter-btn.active { background: var(--gold); color: var(--dark); border-color: var(--gold); font-weight: bold; }
     .gallery-group { margin-bottom: 20px; }
     .gallery-title { color: white; border-bottom: 1px solid #444; padding-bottom: 5px; margin-bottom: 10px; font-size: 1.1em; }
-    .gallery { display: flex; gap: 10px; flex-wrap: wrap; padding-bottom: 10px; }    
+    .gallery { display: flex; gap: 10px; flex-wrap: wrap; padding-bottom: 10px; }  
     .gallery img { height: 100px; width: 140px; border-radius: 5px; border: 1px solid #444; object-fit: cover; transition: 0.2s; cursor: pointer; }
     .gallery img:hover { border-color: var(--gold); transform: scale(1.05); }
     .flex-upload-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 15px; background: #111; padding: 15px; border-radius: 8px; border: 1px solid #333; }
@@ -56,6 +63,11 @@
   <div class="header">
     <img src="https://i.postimg.cc/cJhXywng/aaa-luxury-sport-cars-rental-logo.jpg">
     <h2 style="color: var(--gold);">Fleet Maintenance & Status</h2>
+  </div>
+
+  <!-- New Search Bar -->
+  <div class="search-container">
+    <input type="text" id="searchInput" class="search-input" placeholder="Search by Plate, Brand, Model, or Driver..." oninput="handleSearch()">
   </div>
 
   <div id="loader" class="loader">Scanning Fleet...</div>
@@ -152,7 +164,14 @@
 
     function updateFleetSilently(fleet) {
       globalFleet = fleet;
-      if (currentView === 'brands') showBrands(); else if (currentView === 'types') showTypes(selectedBrand); else if (currentView === 'cars') showCars(selectedBrand, selectedType);
+      // If there's an active search query, refresh search instead of views
+      if (document.getElementById('searchInput').value.trim() !== "") {
+        handleSearch();
+      } else {
+        if (currentView === 'brands') showBrands(); 
+        else if (currentView === 'types') showTypes(selectedBrand); 
+        else if (currentView === 'cars') showCars(selectedBrand, selectedType);
+      }
     }
 
     function getGroupedData() {
@@ -161,19 +180,65 @@
       return grouped;
     }
 
+    // --- Search Functionality ---
+    function handleSearch() {
+      const query = document.getElementById('searchInput').value.toLowerCase().trim();
+      
+      // If search is empty, return to normal navigation view
+      if (!query) {
+        if (currentView === 'brands') showBrands();
+        else if (currentView === 'types') showTypes(selectedBrand);
+        else if (currentView === 'cars') showCars(selectedBrand, selectedType);
+        return;
+      }
+
+      // Filter fleet globally across any relevant field
+      const results = globalFleet.filter(car => 
+        (car.plate && car.plate.toLowerCase().includes(query)) ||
+        (car.brand && car.brand.toLowerCase().includes(query)) ||
+        (car.type && car.type.toLowerCase().includes(query)) ||
+        (car.driver && car.driver.toLowerCase().includes(query))
+      );
+
+      // Render search results
+      let html = "";
+      if (results.length === 0) {
+        html = "<p style='color:#888; text-align:center; width:100%; font-size:1.2em;'>No matching vehicles found.</p>";
+      } else {
+        // Sort results similar to fleet view
+        results.sort((a, b) => a.status === "On Duty" ? -1 : 1);
+        results.forEach(function(car) {
+          var statusClass = car.status === "On Duty" ? "on-duty" : "", dirtyClass = car.clean === "Dirty" ? "dirty" : "";
+          var badgeClass = car.status === "On Duty" ? "bg-gold" : "bg-green", cleanBadge = car.clean === "Dirty" ? `<span class="status-badge bg-red">🚨 NEEDS CLEANING</span>` : `<span class="status-badge bg-green">✨ CLEAN</span>`;
+          html += `<div class="car-card ${statusClass} ${dirtyClass}" onclick="openModal('${car.plate}')"><span class="plate">${car.plate}</span><div class="brand">${car.brand} ${car.type}</div><div style="display:flex; gap: 5px;"><span class="status-badge ${badgeClass}">${car.status}</span>${cleanBadge}</div><div class="driver-info"><div style="margin-bottom: 5px; color: white;">🛣️ KMS: <span style="color:var(--gold); font-weight:bold;">${car.kms ? car.kms : 'N/A'}</span></div>${car.status === "On Duty" ? '👤 Driver: <b>' + car.driver + '</b>' : '📍 Location: AAA Garage'}</div></div>`;
+        });
+      }
+
+      document.getElementById('navBar').innerHTML = `<h3>Search Results (${results.length})</h3>`; 
+      document.getElementById('fleetGrid').innerHTML = html;
+    }
+
     function showBrands() {
+      // Don't override if user is typing a search
+      if (document.getElementById('searchInput').value.trim() !== "") return;
       currentView = 'brands'; const grouped = getGroupedData(), brands = Object.keys(grouped).sort(); 
       let html = ""; brands.forEach(brand => { html += `<div class="car-card nav-card" onclick="showTypes('${brand.replace(/'/g, "\\'")}')"><h3 class="nav-title">${brand}</h3></div>`; });
       document.getElementById('navBar').innerHTML = `<h3>Select a Brand</h3>`; document.getElementById('fleetGrid').innerHTML = html;
     }
 
     function showTypes(brand) {
+      if (document.getElementById('searchInput').value.trim() !== "") {
+        document.getElementById('searchInput').value = ""; // Clear search when interacting with normal navigation manually
+      }
       currentView = 'types'; selectedBrand = brand; const grouped = getGroupedData(), types = Object.keys(grouped[brand]).sort(); 
       let html = ""; types.forEach(type => { html += `<div class="car-card nav-card" onclick="showCars('${brand.replace(/'/g, "\\'")}', '${type.replace(/'/g, "\\'")}')"><h3 class="nav-title">${type || 'Standard'}</h3></div>`; });
       document.getElementById('navBar').innerHTML = `<button class="back-btn" onclick="showBrands()">⬅ Back</button> <h3>${brand} ➔ Select Category</h3>`; document.getElementById('fleetGrid').innerHTML = html;
     }
 
     function showCars(brand, type) {
+      if (document.getElementById('searchInput').value.trim() !== "") {
+        document.getElementById('searchInput').value = ""; 
+      }
       currentView = 'cars'; selectedType = type; const grouped = getGroupedData(); let cars = grouped[brand][type];
       cars.sort((a, b) => a.status === "On Duty" ? -1 : 1);
       let html = "";
@@ -246,7 +311,13 @@
       apiCall("saveCarKms", currentlyEditingPlate, kmsValue).then(() => {
         document.getElementById('kmsStatus').innerText = "Saved!"; document.getElementById('kmsStatus').style.color = "var(--green)";
         const carIndex = globalFleet.findIndex(c => c.plate === currentlyEditingPlate); if(carIndex > -1) globalFleet[carIndex].kms = kmsValue;
-        if (currentView === 'cars') showCars(selectedBrand, selectedType);
+        
+        // Update view if not searching
+        if (document.getElementById('searchInput').value.trim() === "" && currentView === 'cars') {
+          showCars(selectedBrand, selectedType);
+        } else if (document.getElementById('searchInput').value.trim() !== "") {
+          handleSearch();
+        }
       }).catch(err => {
         document.getElementById('kmsStatus').innerText = "Error"; document.getElementById('kmsStatus').style.color = "var(--red)";
       }); 

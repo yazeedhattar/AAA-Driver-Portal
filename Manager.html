@@ -57,6 +57,16 @@
     .req-card h4 { margin: 0 0 10px 0; color: #ff9800; font-size: 16px;}
     .req-card p { margin: 5px 0; font-size: 13px; color: #ccc;}
     .btn-approve { background: #4caf50; color: white; border: none; padding: 8px; width: 100%; border-radius: 4px; margin-top: 10px; cursor: pointer; font-weight: bold;}
+    
+    /* Table specific styles for Reservations */
+    .res-table { width:100%; text-align:left; border-collapse:collapse; font-size:13px; }
+    .res-table th { padding:12px 10px; border-bottom:1px solid #444; color:var(--gold); text-transform:uppercase; font-size:11px; letter-spacing:1px; }
+    .res-table td { padding:12px 10px; border-bottom:1px solid #222; }
+    .res-table tr:hover { background: #111; }
+    .badge { padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; color: black; text-transform: uppercase;}
+    .badge-pending { background: #ff9800; }
+    .badge-approved { background: #4caf50; }
+    .badge-cancelled { background: #f44336; color: white;}
   </style>
 </head>
 <body>
@@ -81,6 +91,53 @@
         <button class="close-btn" onclick="toggleModal('recordsModal')">✖</button>
       </div>
       <div id="recordsBody" style="max-height: 60vh; overflow-y: auto;">Loading driver records...</div>
+    </div>
+  </div>
+
+  <!-- RESERVATIONS LIST MODAL -->
+  <div class="modal-overlay" id="reservationsModal">
+    <div class="modal-content" style="max-width: 800px;">
+      <div class="modal-header">
+        <h3 style="margin:0; color:#2196F3; text-transform:uppercase;">📋 Reservations</h3>
+        <div>
+          <button class="btn-action btn-green" onclick="openEditReservation()">➕ New</button>
+          <button class="close-btn" style="margin-left:15px;" onclick="toggleModal('reservationsModal')">✖</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto; max-height: 60vh;">
+        <table class="res-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Client</th>
+              <th>Service</th>
+              <th>Notes</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="resBody">
+            <tr><td colspan='6' style='text-align:center; padding:20px; color:#888;'>Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- EDIT/ADD RESERVATION MODAL -->
+  <div class="modal-overlay" id="editResModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 style="margin:0; color:var(--gold); text-transform:uppercase;" id="editResTitle">Edit Reservation</h3>
+        <button class="close-btn" onclick="toggleModal('editResModal')">✖</button>
+      </div>
+      <input type="hidden" id="resRowIdx" value="">
+      <div class="form-group"><label>Client Name</label><input type="text" id="resClient" placeholder="Client Name"></div>
+      <div class="form-group"><label>Date & Time</label><input type="datetime-local" id="resDate"></div>
+      <div class="form-group"><label>Service Type</label><select id="resService"><option value="TRF">TRF (Transfer)</option><option value="DISPO">DISPO (Hourly)</option></select></div>
+      <div class="form-group"><label>Extra Notes / Details</label><input type="text" id="resNotes" placeholder="Special requirements..."></div>
+      <div class="form-group" id="resStatusGroup"><label>Status</label><select id="resStatus"><option value="Pending">Pending</option><option value="Approved">Approved</option><option value="Cancelled">Cancelled</option></select></div>
+      <button class="btn-action btn-green" style="width:100%; padding:15px; font-size:14px; margin-top:10px;" onclick="saveReservation()">💾 Save Reservation</button>
     </div>
   </div>
 
@@ -120,6 +177,7 @@
     <div class="header-title">
       Command Center
       <button class="btn-action btn-pending" id="btnPendingAlert" onclick="openPending()">🛎️ Requests (<span id="reqCount">0</span>)</button>
+      <button class="btn-action" style="background:#2196F3; color:white;" onclick="openReservations()">📋 Reservations</button>
       <button class="btn-action" onclick="openRecords()">📁 Driver Records</button>
       <button class="btn-action btn-green" onclick="openEmptyDispatch()">📅 Dispatch</button>
     </div>
@@ -189,6 +247,99 @@
       t.style.boxShadow = '0 4px 10px rgba(0,0,0,0.8)'; t.style.fontWeight = 'bold'; t.style.fontSize = '13px'; t.style.textTransform = 'uppercase';
       t.innerText = msg; $('toast-container').appendChild(t); setTimeout(() => t.remove(), 12000); 
     }
+
+    // --- RESERVATIONS LOGIC ---
+    function openReservations() {
+      toggleModal('reservationsModal');
+      loadReservations();
+    }
+
+    function loadReservations() {
+      $('resBody').innerHTML = "<tr><td colspan='6' style='text-align:center; padding:20px; color:#888;'>Loading reservations...</td></tr>";
+      apiCall("getAllReservations").then(data => {
+        if(data.error) return $('resBody').innerHTML = `<tr><td colspan='6' style='color:#f44336; text-align:center;'>Error: ${data.error}</td></tr>`;
+        if(!data.length) return $('resBody').innerHTML = `<tr><td colspan='6' style='text-align:center; padding:20px; color:#888;'>No reservations found.</td></tr>`;
+        
+        let html = "";
+        data.forEach(r => {
+          let dateObj = r.date ? new Date(r.date) : null;
+          let dStr = (dateObj && !isNaN(dateObj.getTime())) ? dateObj.toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : "TBD";
+          
+          let badgeClass = r.status === 'Pending' ? 'badge-pending' : (r.status === 'Approved' ? 'badge-approved' : 'badge-cancelled');
+          let rDataStr = encodeURIComponent(JSON.stringify(r));
+
+          html += `<tr>
+            <td style="white-space:nowrap;">${dStr}</td>
+            <td style="font-weight:bold; color:white;">${r.client}</td>
+            <td style="color:#aaa;">${r.service}</td>
+            <td style="color:#ccc; max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${r.details}">${r.details || '-'}</td>
+            <td><span class="badge ${badgeClass}">${r.status}</span></td>
+            <td><button class="btn-action" style="padding:4px 8px; font-size:10px; background:#444; color:white;" onclick="openEditReservation('${rDataStr}')">✏️ Edit</button></td>
+          </tr>`;
+        });
+        $('resBody').innerHTML = html;
+      }).catch(err => {
+        $('resBody').innerHTML = `<tr><td colspan='6' style='color:#f44336; text-align:center;'>Failed to load.</td></tr>`;
+      });
+    }
+
+    function openEditReservation(encodedData) {
+      if(encodedData) {
+        let r = JSON.parse(decodeURIComponent(encodedData));
+        $('resRowIdx').value = r.row;
+        $('resClient').value = r.client;
+        
+        if(r.date && r.date !== 'undefined') {
+          let d = new Date(r.date);
+          d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+          $('resDate').value = d.toISOString().slice(0,16);
+        } else {
+          $('resDate').value = "";
+        }
+        
+        $('resService').value = r.service || "TRF";
+        $('resNotes').value = r.details || "";
+        $('resStatus').value = r.status || "Pending";
+        
+        $('editResTitle').innerText = "Edit Reservation";
+        $('resStatusGroup').style.display = "block";
+      } else {
+        $('resRowIdx').value = "";
+        $('resClient').value = "";
+        $('resDate').value = "";
+        $('resService').value = "TRF";
+        $('resNotes').value = "";
+        $('resStatus').value = "Pending";
+        
+        $('editResTitle').innerText = "New Reservation";
+        $('resStatusGroup').style.display = "none";
+      }
+      $('editResModal').style.display = "flex";
+    }
+
+    function saveReservation() {
+      let row = $('resRowIdx').value;
+      let payload = {
+        client: $('resClient').value,
+        date: $('resDate').value,
+        service: $('resService').value,
+        details: $('resNotes').value,
+        status: $('resStatus').value
+      };
+      
+      if(!payload.client || !payload.date) return showToast("Error: Client and Date are required.");
+      
+      let fn = row ? "updateReservation" : "addReservation";
+      let args = row ? [row, payload] : [payload];
+      
+      apiCall(fn, ...args).then(res => {
+        showToast(res.msg);
+        $('editResModal').style.display = "none";
+        loadReservations(); // Refresh list
+        updateDashboard();  // Refresh alerts
+      }).catch(err => showToast("Error: " + err.message));
+    }
+    // ----------------------------
 
     function showShareLink(driverName) {
       let url = webAppUrl + "?driver=" + encodeURIComponent(driverName);
